@@ -1,0 +1,257 @@
+.ingredients-manager {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.ingredients-header {
+  text-align: center;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.ingredients-header h2 {
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+  font-size: 1.75rem;
+}
+
+.add-ingredient-form {
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.9rem;
+  color: #7f8c8d;
+  font-weight: 500;
+}
+
+.form-group input {
+  padding: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  font-size: 1rem;
+  background: rgba(255, 255, 255, 0.9);
+  transition: all 0.2s ease;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ingredients-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.ingredient-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 1rem;
+}
+
+.ingredient-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 40px rgba(31, 38, 135, 0.15);
+}
+
+.ingredient-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ingredient-header h3 {
+  font-size: 1.25rem;
+  color: #2c3e50;
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.cost-badge {
+  background: rgba(46, 204, 113, 0.1);
+  color: #27ae60;
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ingredient-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.detail-item {
+  background: rgba(255, 255, 255, 0.7);
+  padding: 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.detail-item label {
+  display: block;
+  font-size: 0.85rem;
+  color: #7f8c8d;
+  margin-bottom: 0.5rem;
+}
+
+.detail-item span {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.card-actions button {
+  padding: 0.75rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.btn-add {
+  background: rgba(52, 152, 219, 0.1);
+  color: #2980b9;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-add:hover {
+  background: rgba(52, 152, 219, 0.2);
+}
+
+.btn-edit {
+  background: rgba(46, 204, 113, 0.1);
+  color: #27ae60;
+}
+
+.btn-edit:hover {
+  background: rgba(46, 204, 113, 0.2);
+}
+
+.btn-delete {
+  background: rgba(231, 76, 60, 0.1);
+  color: #c0392b;
+}
+
+.btn-delete:hover {
+  background: rgba(231, 76, 60, 0.2);
+}
+
+.btn-save {
+  background: rgba(46, 204, 113, 0.1);
+  color: #27ae60;
+}
+
+.btn-save:hover {
+  background: rgba(46, 204, 113, 0.2);
+}
+
+.btn-cancel {
+  background: rgba(149, 165, 166, 0.1);
+  color: #7f8c8d;
+}
+
+.btn-cancel:hover {
+  background: rgba(149, 165, 166, 0.2);
+}
+
+.edit-form {
+  width: 100%;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .ingredients-manager {
+    padding: 1rem;
+  }
+
+  .ingredients-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ingredient-card {
+    padding: 1rem;
+  }
+
+  .ingredient-header {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .ingredient-header h3 {
+    margin-bottom: 0.5rem;
+  }
+
+  .ingredient-details {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-item {
+    padding: 0.75rem;
+  }
+
+  .card-actions {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .card-actions button {
+    padding: 0.5rem;
+  }
+}
