@@ -2,23 +2,23 @@ export const RECIPE_CATEGORIES = ['Drinks Bar', 'Hot Food', 'Bakery'];
 
 export const sampleIngredients = [
   // Premium Coffee Ingredients
-  { id: 1, name: 'Single Origin Arabica Beans', cost: 1200, unit: 'kg', supplier: 'Blue Mountain Estates' },
-  { id: 2, name: 'Organic Oat Milk', cost: 180, unit: 'L', supplier: 'Oatly Premium' },
-  { id: 3, name: 'Vanilla Bean Pods', cost: 2800, unit: '100g', supplier: 'Madagascar Exports' },
-  { id: 4, name: 'Raw Honey', cost: 850, unit: 'kg', supplier: 'Local Organic Farms' },
+  { id: 1, name: 'Single Origin Arabica Beans', cost: 1200, unit: 'kg', category: 'Raw Ingredients' },
+  { id: 2, name: 'Organic Oat Milk', cost: 180, unit: 'L', category: 'Dairy and Dairy Alternatives' },
+  { id: 3, name: 'Vanilla Bean Pods', cost: 2800, unit: '100g', category: 'Specialty Ingredients' },
+  { id: 4, name: 'Raw Honey', cost: 850, unit: 'kg', category: 'Raw Ingredients' },
   
   // Premium Food Ingredients
-  { id: 5, name: 'Norwegian Salmon', cost: 2200, unit: 'kg', supplier: 'Nordic Seafood Co.' },
-  { id: 6, name: 'Wagyu Beef', cost: 8500, unit: 'kg', supplier: 'Japanese Imports Ltd.' },
-  { id: 7, name: 'Truffle Oil', cost: 1800, unit: '250ml', supplier: 'Italian Delicacies' },
-  { id: 8, name: 'Saffron Threads', cost: 4500, unit: '10g', supplier: 'Spanish Spice Traders' },
-  { id: 9, name: 'Aged Parmesan', cost: 1600, unit: 'kg', supplier: 'Italian Cheese House' },
+  { id: 5, name: 'Norwegian Salmon', cost: 2200, unit: 'kg', category: 'Frozen and Refrigerated Items' },
+  { id: 6, name: 'Wagyu Beef', cost: 8500, unit: 'kg', category: 'Frozen and Refrigerated Items' },
+  { id: 7, name: 'Truffle Oil', cost: 1800, unit: '250ml', category: 'Oils and Fats' },
+  { id: 8, name: 'Saffron Threads', cost: 4500, unit: '10g', category: 'Specialty Ingredients' },
+  { id: 9, name: 'Aged Parmesan', cost: 1600, unit: 'kg', category: 'Dairy and Dairy Alternatives' },
   
   // Premium Bakery Ingredients
-  { id: 10, name: 'French Butter', cost: 950, unit: 'kg', supplier: 'Normandy Dairy' },
-  { id: 11, name: 'Belgian Dark Chocolate', cost: 1200, unit: 'kg', supplier: 'Callebaut' },
-  { id: 12, name: 'Almond Flour', cost: 850, unit: 'kg', supplier: 'Premium Nuts Co.' },
-  { id: 13, name: 'Madagascar Vanilla Extract', cost: 1500, unit: '100ml', supplier: 'Vanilla Trading Co.' }
+  { id: 10, name: 'French Butter', cost: 950, unit: 'kg', category: 'Dairy and Dairy Alternatives' },
+  { id: 11, name: 'Belgian Dark Chocolate', cost: 1200, unit: 'kg', category: 'Specialty Ingredients' },
+  { id: 12, name: 'Almond Flour', cost: 850, unit: 'kg', category: 'Dry Staples' },
+  { id: 13, name: 'Madagascar Vanilla Extract', cost: 1500, unit: '100ml', category: 'Specialty Ingredients' }
 ];
 
 export const sampleRecipes = [
@@ -35,9 +35,9 @@ export const sampleRecipes = [
     ],
     totalCost: 65,
     sellingPrice: 450,
-    averageMonthlySales: 1200,
-    monthlyRevenue: 540000,
-    monthlyProfit: 462000
+    quarterlySales: 3600,
+    quarterlyRevenue: 1620000,
+    quarterlyProfit: 1386000
   },
   {
     id: 2,
@@ -50,9 +50,9 @@ export const sampleRecipes = [
     ],
     totalCost: 62,
     sellingPrice: 380,
-    averageMonthlySales: 800,
-    monthlyRevenue: 304000,
-    monthlyProfit: 254400
+    quarterlySales: 2400,
+    quarterlyRevenue: 912000,
+    quarterlyProfit: 763200
   },
 
   // Hot Food
@@ -68,9 +68,9 @@ export const sampleRecipes = [
     ],
     totalCost: 1780,
     sellingPrice: 4500,
-    averageMonthlySales: 200,
-    monthlyRevenue: 900000,
-    monthlyProfit: 544000
+    quarterlySales: 600,
+    quarterlyRevenue: 2700000,
+    quarterlyProfit: 1632000
   },
   {
     id: 4,
@@ -83,9 +83,9 @@ export const sampleRecipes = [
     ],
     totalCost: 485,
     sellingPrice: 1800,
-    averageMonthlySales: 300,
-    monthlyRevenue: 540000,
-    monthlyProfit: 394500
+    quarterlySales: 900,
+    quarterlyRevenue: 1620000,
+    quarterlyProfit: 1183500
   },
 
   // Bakery
@@ -99,10 +99,10 @@ export const sampleRecipes = [
       { id: 11, name: 'Belgian Dark Chocolate', quantity: 0.03, unit: 'kg' }
     ],
     totalCost: 74,
-    sellingPrice: 320,
-    averageMonthlySales: 900,
-    monthlyRevenue: 288000,
-    monthlyProfit: 221400
+    sellingPrice: 280,
+    quarterlySales: 4500,
+    quarterlyRevenue: 1260000,
+    quarterlyProfit: 927000
   },
   {
     id: 6,
@@ -115,8 +115,8 @@ export const sampleRecipes = [
     ],
     totalCost: 57.5,
     sellingPrice: 420,
-    averageMonthlySales: 600,
-    monthlyRevenue: 252000,
-    monthlyProfit: 217500
+    quarterlySales: 1800,
+    quarterlyRevenue: 756000,
+    quarterlyProfit: 645000
   }
 ];

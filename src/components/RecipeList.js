@@ -12,6 +12,10 @@ const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteReci
   const [sortOrder, setSortOrder] = useState('asc');
   const [expandedRecipes, setExpandedRecipes] = useState(new Set());
 
+  // Calculate completed and pending counts
+  const completedCount = recipes.filter(r => r.ingredients && r.ingredients.length > 0).length;
+  const pendingCount = recipes.length - completedCount;
+
   const handleDeleteRecipe = (recipeId) => {
     if (window.confirm('Are you sure you want to delete this recipe?')) {
       onDeleteRecipe(recipeId);
@@ -53,44 +57,22 @@ const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteReci
     });
   };
 
-  const calculateRecipeMetrics = (recipe) => {
-    console.group('Recipe Calculations:', recipe.name);
-    
-    // Calculate total cost
+  const calculateMetrics = (recipe) => {
     const totalCost = recipe.ingredients.reduce((sum, ingredient) => {
-      const unitCost = parseFloat(ingredient.costPerUnit || ingredient.cost || 0);
-      const quantity = parseFloat(ingredient.quantity || 0);
-      const itemCost = unitCost * quantity;
-      
-      console.log('Ingredient:', ingredient.name);
-      console.log('Unit Cost:', unitCost);
-      console.log('Quantity:', quantity);
-      console.log('Item Cost:', itemCost);
-      
-      return sum + itemCost;
+      return sum + (ingredient.cost * ingredient.quantity);
     }, 0);
 
-    // Calculate other metrics
     const sellingPrice = parseFloat(recipe.sellingPrice || 0);
-    const monthlySales = parseFloat(recipe.averageMonthlySales || 0);
-    const monthlyRevenue = sellingPrice * monthlySales;
-    const monthlyProfit = (sellingPrice - totalCost) * monthlySales;
+    const quarterlySales = parseFloat(recipe.quarterlySales || 0);
     const profitMargin = sellingPrice ? ((sellingPrice - totalCost) / sellingPrice) * 100 : 0;
-
-    console.log('Total Cost:', totalCost);
-    console.log('Selling Price:', sellingPrice);
-    console.log('Monthly Sales:', monthlySales);
-    console.log('Monthly Revenue:', monthlyRevenue);
-    console.log('Monthly Profit:', monthlyProfit);
-    console.log('Profit Margin:', profitMargin);
-    
-    console.groupEnd();
+    const quarterlyRevenue = sellingPrice * quarterlySales;
+    const quarterlyProfit = (sellingPrice - totalCost) * quarterlySales;
 
     return {
       totalCost,
       profitMargin,
-      monthlyRevenue,
-      monthlyProfit
+      quarterlyRevenue,
+      quarterlyProfit
     };
   };
 
@@ -112,9 +94,13 @@ const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteReci
             compareA = ((a.sellingPrice - a.totalCost) / a.sellingPrice) * 100;
             compareB = ((b.sellingPrice - b.totalCost) / b.sellingPrice) * 100;
             break;
-          case 'monthlySales':
-            compareA = a.averageMonthlySales;
-            compareB = b.averageMonthlySales;
+          case 'status':
+            compareA = a.ingredients && a.ingredients.length > 0 ? 1 : 0;
+            compareB = b.ingredients && b.ingredients.length > 0 ? 1 : 0;
+            break;
+          case 'quarterlySales':
+            compareA = parseFloat(a.quarterlySales || 0);
+            compareB = parseFloat(b.quarterlySales || 0);
             break;
           default:
             compareA = a.name.toLowerCase();
@@ -160,31 +146,31 @@ const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteReci
   return (
     <div className="recipe-list-container">
       <div className="recipe-controls">
-        <input
-          type="text"
-          placeholder="Search recipes..."
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setCurrentPage(1);
-          }}
-          className="search-input"
-        />
-        
-        <select
-          value={selectedCategoryState}
-          onChange={(e) => {
-            setSelectedCategory(e.target.value);
-            setCurrentPage(1);
-          }}
-          className="category-select"
-        >
-          <option value="all">All Categories</option>
-          {RECIPE_CATEGORIES.map(category => (
-            <option key={category} value={category}>{category}</option>
-          ))}
-        </select>
-
+        <div className="search-and-filter">
+          <input
+            type="text"
+            placeholder="Search recipes..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="search-input"
+          />
+          <select
+            value={selectedCategoryState}
+            onChange={(e) => {
+              setSelectedCategory(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="category-select"
+          >
+            <option value="all">All Categories</option>
+            {RECIPE_CATEGORIES.map(category => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </select>
+        </div>
         <div className="sort-controls">
           <button 
             onClick={() => handleSort('name')}
@@ -199,10 +185,16 @@ const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteReci
             Gross Profit Margin {sortBy === 'profitMargin' && (sortOrder === 'asc' ? '↑' : '↓')}
           </button>
           <button 
-            onClick={() => handleSort('monthlySales')}
-            className={`sort-button ${sortBy === 'monthlySales' ? 'active' : ''}`}
+            onClick={() => handleSort('status')}
+            className={`sort-button ${sortBy === 'status' ? 'active' : ''}`}
           >
-            Monthly Sales {sortBy === 'monthlySales' && (sortOrder === 'asc' ? '↑' : '↓')}
+            Status (✓{completedCount} ⚠️{pendingCount}) {sortBy === 'status' && (sortOrder === 'asc' ? '↑' : '↓')}
+          </button>
+          <button 
+            onClick={() => handleSort('quarterlySales')}
+            className={`sort-button ${sortBy === 'quarterlySales' ? 'active' : ''}`}
+          >
+            Quarterly Sales {sortBy === 'quarterlySales' && (sortOrder === 'asc' ? '↑' : '↓')}
           </button>
         </div>
       </div>
@@ -215,10 +207,15 @@ const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteReci
         {paginatedRecipes.map(recipe => {
           if (!recipe) return null;
           const isExpanded = expandedRecipes.has(recipe.id);
-          const metrics = calculateRecipeMetrics(recipe);
+          const metrics = calculateMetrics(recipe);
           
           return (
             <div key={recipe.id} className="recipe-card glass-card">
+              <div 
+                className={`recipe-status ${recipe.ingredients && recipe.ingredients.length > 0 ? 'completed' : 'pending'}`}
+                title={`${recipe.ingredients && recipe.ingredients.length > 0 ? 'Recipe Complete' : 'Ingredients Needed'}`}
+              />
+              
               <div className="recipe-category">
                 <span>{recipe.category || 'Uncategorized'}</span>
               </div>
@@ -234,7 +231,7 @@ const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteReci
                     <h4>Ingredients</h4>
                     <div className="ingredients-list">
                       {(recipe.ingredients || []).map((ingredient, index) => {
-                        const cost = parseFloat(ingredient.costPerUnit || ingredient.cost || 0);
+                        const cost = parseFloat(ingredient.cost || 0);
                         const quantity = parseFloat(ingredient.quantity || 0);
                         const totalCost = cost * quantity;
                         
@@ -269,16 +266,16 @@ const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteReci
                         <span>{metrics.profitMargin.toFixed(1)}%</span>
                       </div>
                       <div className="metric-item">
-                        <label>Monthly Sales</label>
-                        <span>{parseInt(recipe.averageMonthlySales || 0)} units</span>
+                        <label>Quarterly Sales</label>
+                        <span>{parseInt(recipe.quarterlySales || 0)} units</span>
                       </div>
                       <div className="metric-item">
-                        <label>Monthly Revenue</label>
-                        <span>{formatInLakhs(metrics.monthlyRevenue)}</span>
+                        <label>Quarterly Revenue</label>
+                        <span>{formatInLakhs(metrics.quarterlyRevenue)}</span>
                       </div>
                       <div className="metric-item highlight">
                         <label>Gross Profit</label>
-                        <span>{formatInLakhs(metrics.monthlyProfit)}</span>
+                        <span>{formatInLakhs(metrics.quarterlyProfit)}</span>
                       </div>
                     </div>
                   </div>

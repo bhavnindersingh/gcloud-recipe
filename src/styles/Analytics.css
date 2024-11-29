@@ -1,42 +1,344 @@
 .analytics-container {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding: 2rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.analytics-container h2 {
-  color: #333;
-  margin-bottom: 20px;
-  text-align: center;
+.analytics-tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 1rem;
+}
+
+.tab-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: #495057;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.tab-button:hover {
+  background: #e9ecef;
+}
+
+.tab-button.active {
+  background: #339af0;
+  color: white;
+}
+
+/* Overview Tab Styles */
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.mf-status-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.progress-container {
+  position: relative;
+  height: 24px;
+  background: #e9ecef;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.progress-bar {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 12px;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #212529;
+  font-weight: 600;
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+}
+
+.category-performance {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.performance-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.category-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 1.5rem;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.category-card h4 {
+  margin: 0 0 1rem 0;
+  color: #495057;
+}
+
+.mf-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.mf-value.success { color: #2ecc71; }
+.mf-value.warning { color: #f1c40f; }
+.mf-value.danger { color: #e74c3c; }
+
+.target-gap {
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.gap-negative {
+  color: #e74c3c;
+}
+
+.gap-positive {
+  color: #2ecc71;
+}
+
+.recipes-below {
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.trend {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.trend.up {
+  color: #2ecc71;
+}
+
+.trend.down {
+  color: #e74c3c;
+}
+
+/* Adjustments Table */
+.adjustments-section {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-top: 2rem;
+}
+
+.table-container {
+  overflow-x: auto;
+  margin-top: 1rem;
+}
+
+.adjustments-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.adjustments-table th,
+.adjustments-table td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.adjustments-table th {
+  padding: 12px;
+  text-align: left;
+  background-color: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.adjustments-table th:hover {
+  background-color: #e9ecef;
+}
+
+.adjustments-table td.success { color: #2ecc71; }
+.adjustments-table td.warning { color: #f1c40f; }
+.adjustments-table td.danger { color: #e74c3c; }
+
+/* Make sort indicators smaller and lighter */
+.sort-icon {
+  font-size: 0.7em;
+  color: #6c757d;
+  margin-left: 4px;
+  opacity: 0.6;
+}
+
+.sort-icon.active {
+  opacity: 1;
+}
+
+/* Ingredient Analysis Styles */
+.ingredient-analysis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.cost-drivers {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.drivers-list {
+  margin-top: 1rem;
+}
+
+.driver-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 1rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.driver-item:last-child {
+  border-bottom: none;
+}
+
+.rank {
+  width: 2rem;
+  height: 2rem;
+  background: #339af0;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  margin-right: 1rem;
+}
+
+.driver-details {
+  flex: 1;
+}
+
+.driver-details h4 {
+  margin: 0 0 0.5rem 0;
+  color: #495057;
+}
+
+.driver-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.usage-chart {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 992px) {
+  .ingredient-analysis {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .analytics-container {
+    padding: 1rem;
+  }
+
+  .analytics-tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab-button {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .performance-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .analytics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
-  margin-top: 20px;
 }
 
 .analytics-card {
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(10px);
   border-radius: 15px;
-  padding: 20px;
+  padding: 1.5rem;
   box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  transition: transform 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .analytics-card:hover {
   transform: translateY(-5px);
+  box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.25);
+}
+
+.total-card {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, rgba(52, 152, 219, 0.1), rgba(155, 89, 182, 0.1));
+  border: none;
+}
+
+.total-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 2rem;
+  padding: 1rem;
 }
 
 .analytics-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
 
@@ -44,54 +346,57 @@
   margin: 0;
   color: #2c3e50;
   font-size: 1.2rem;
-}
-
-.analytics-card h3 {
-  color: #2c3e50;
-  margin-bottom: 1.2rem;
-  font-size: 1.3rem;
   font-weight: 600;
 }
 
-.recipe-count {
+.recipe-count, .category-tag, .ingredient-count {
   background: rgba(52, 152, 219, 0.1);
-  padding: 4px 8px;
-  border-radius: 12px;
+  padding: 4px 12px;
+  border-radius: 20px;
   font-size: 0.9rem;
   color: #3498db;
+  font-weight: 500;
+}
+
+.category-tag {
+  background: rgba(46, 204, 113, 0.1);
+  color: #27ae60;
+}
+
+.ingredient-count {
+  background: rgba(155, 89, 182, 0.1);
+  color: #8e44ad;
 }
 
 .analytics-content {
   display: grid;
-  gap: 15px;
-}
-
-.total-card {
-  grid-column: 1 / -1;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.85));
-}
-
-.total-metrics, .category-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.2rem;
+  gap: 1rem;
 }
 
 .metric {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 0.8rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  transition: background-color 0.2s ease;
+}
+
+.metric:hover {
+  background: rgba(255, 255, 255, 0.8);
 }
 
 .metric label {
   color: #7f8c8d;
   font-size: 0.9rem;
+  font-weight: 500;
 }
 
 .metric .value {
   font-weight: 600;
   color: #2c3e50;
+  font-size: 1.1rem;
 }
 
 .metric .value.highlight {
@@ -100,33 +405,37 @@
 
 .metric .value.revenue {
   color: #27ae60;
+  font-size: 1.3rem;
+  font-weight: 700;
 }
 
 .metric .value.profit {
-  color: #2980b9;
-}
-
-.metric .value.cost {
-  color: #c0392b;
-}
-
-@media (max-width: 1366px) {
-  .analytics-grid {
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  }
+  color: #8e44ad;
+  font-size: 1.3rem;
+  font-weight: 700;
 }
 
 @media (max-width: 768px) {
+  .analytics-container {
+    padding: 10px;
+  }
+
   .analytics-grid {
     grid-template-columns: 1fr;
   }
-  
-  .analytics-card {
-    margin-bottom: 15px;
-  }
-  
-  .total-metrics, .category-metrics {
+
+  .total-metrics {
     grid-template-columns: 1fr;
     gap: 1rem;
+  }
+
+  .metric {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .metric .value {
+    align-self: flex-end;
   }
 }

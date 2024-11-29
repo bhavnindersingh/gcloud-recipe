@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
 import IngredientsManager from './components/IngredientsManager';
 import RecipeForm from './components/RecipeForm';
 import RecipeList from './components/RecipeList';
+import RecipeManager from './components/RecipeManager';
 import Analytics from './components/Analytics';
 import Login from './components/Login';
+import ProtectedRoute from './components/ProtectedRoute';
 import { sampleIngredients, sampleRecipes } from './data/sampleData';
 import * as XLSX from 'xlsx';
-import './styles/shared.css';
 import './styles/App.css';
 
 function App() {
   const fileInputRef = useRef(null);
+  const navigate = useNavigate();
   
   // Initialize state from localStorage or use sample data as fallback
   const [ingredients, setIngredients] = useState(() => {
@@ -23,12 +26,8 @@ function App() {
     return savedRecipes ? JSON.parse(savedRecipes) : sampleRecipes;
   });
 
-  const [activeTab, setActiveTab] = useState(() => {
-    const lastActiveTab = localStorage.getItem('activeTab');
-    return lastActiveTab || 'recipes';
-  });
-
   const [editingRecipe, setEditingRecipe] = useState(null);
+  const [viewingRecipe, setViewingRecipe] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('isAuthenticated') === 'true';
   });
@@ -46,18 +45,25 @@ function App() {
     localStorage.setItem('isAuthenticated', isAuthenticated);
   }, [isAuthenticated]);
 
-  useEffect(() => {
-    localStorage.setItem('activeTab', activeTab);
-  }, [activeTab]);
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('isAuthenticated');
+  const handleRecipeSubmit = (recipe) => {
+    setRecipes(prevRecipes => {
+      if (editingRecipe) {
+        return prevRecipes.map(r => r.id === editingRecipe.id ? recipe : r);
+      } else {
+        return [...prevRecipes, { ...recipe, id: Date.now() }];
+      }
+    });
+    setEditingRecipe(null);
   };
 
   const handleEditRecipe = (recipe) => {
     setEditingRecipe(recipe);
-    setActiveTab('form');
+    navigate('/create');
+  };
+
+  const handleCreateRecipe = () => {
+    setEditingRecipe(null); 
+    navigate('/create');
   };
 
   const handleDeleteRecipe = (recipeId) => {
@@ -68,139 +74,119 @@ function App() {
 
   const handleCancelEdit = () => {
     setEditingRecipe(null);
-    setActiveTab('recipes');
   };
 
-  const handleRecipeSubmit = (recipe) => {
-    setRecipes(prevRecipes => {
-      if (editingRecipe) {
-        return prevRecipes.map(r => r.id === editingRecipe.id ? recipe : r);
-      } else {
-        return [...prevRecipes, recipe];
-      }
-    });
-    setEditingRecipe(null);
-    setActiveTab('recipes');
+  const handleViewRecipe = (recipe) => {
+    setViewingRecipe(recipe);
+    navigate('/view');
+  };
+
+  const handleCloseView = () => {
+    setViewingRecipe(null);
+    navigate('/manager');
   };
 
   const exportData = () => {
-    // Prepare recipes worksheet
-    const recipeRows = recipes.map(recipe => ({
-      'Recipe Name': recipe.name,
-      'Description': recipe.description,
-      'Selling Price': recipe.sellingPrice,
-      'Monthly Sales': recipe.averageMonthlySales,
-      'Total Cost': recipe.totalCost,
-      'Profit Margin': recipe.profitMargin,
-      'Monthly Revenue': recipe.monthlyRevenue,
-      'Monthly Profit': recipe.monthlyProfit
-    }));
-
-    // Prepare ingredients worksheet
-    const ingredientRows = ingredients.map(ingredient => ({
-      'Ingredient Name': ingredient.name,
-      'Cost': ingredient.cost,
-      'Cost Per Unit': ingredient.costPerUnit,
-      'Unit': ingredient.unit,
-      'Category': ingredient.category
-    }));
-
-    // Create recipe ingredients worksheet
-    const recipeIngredientsRows = [];
-    recipes.forEach(recipe => {
-      recipe.ingredients.forEach(ing => {
-        recipeIngredientsRows.push({
-          'Recipe Name': recipe.name,
-          'Ingredient Name': ing.name,
-          'Quantity': ing.quantity,
-          'Unit': ing.unit
-        });
-      });
-    });
-
-    // Create workbook with multiple sheets
     const wb = XLSX.utils.book_new();
     
-    // Add worksheets
-    const wsRecipes = XLSX.utils.json_to_sheet(recipeRows);
-    const wsIngredients = XLSX.utils.json_to_sheet(ingredientRows);
-    const wsRecipeIngredients = XLSX.utils.json_to_sheet(recipeIngredientsRows);
+    // Export recipes
+    const recipesWS = XLSX.utils.json_to_sheet(recipes);
+    XLSX.utils.book_append_sheet(wb, recipesWS, "Recipes");
     
-    XLSX.utils.book_append_sheet(wb, wsRecipes, 'Recipes');
-    XLSX.utils.book_append_sheet(wb, wsIngredients, 'Ingredients');
-    XLSX.utils.book_append_sheet(wb, wsRecipeIngredients, 'Recipe Ingredients');
-
+    // Export ingredients
+    const ingredientsWS = XLSX.utils.json_to_sheet(ingredients);
+    XLSX.utils.book_append_sheet(wb, ingredientsWS, "Ingredients");
+    
     // Save the file
-    XLSX.writeFile(wb, `recipe-data-${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, "recipe_calculator_data.xlsx");
   };
 
   const importData = (event) => {
     const file = event.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const workbook = XLSX.read(e.target.result, { type: 'array' });
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      
+      // Import recipes
+      const recipesSheet = workbook.Sheets["Recipes"];
+      if (recipesSheet) {
+        const importedRecipes = XLSX.utils.sheet_to_json(recipesSheet);
+        setRecipes(importedRecipes);
+      }
+      
+      // Import ingredients
+      const ingredientsSheet = workbook.Sheets["Ingredients"];
+      if (ingredientsSheet) {
+        const importedIngredients = XLSX.utils.sheet_to_json(ingredientsSheet);
+        setIngredients(importedIngredients);
+      }
+    };
+    
+    reader.readAsArrayBuffer(file);
+  };
+
+  const importSalesData = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        // Get the first worksheet
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // Convert to JSON (skips empty rows automatically)
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+        const salesData = new Map();
+
+        // Skip header row and process data
+        rows.slice(1).forEach(row => {
+          if (!row || row.length < 2) return; // Skip empty rows
           
-          // Read ingredients
-          const ingredientsSheet = workbook.Sheets['Ingredients'];
-          if (ingredientsSheet) {
-            const importedIngredients = XLSX.utils.sheet_to_json(ingredientsSheet)
-              .map(row => ({
-                id: Date.now() + Math.random(),
-                name: row['Ingredient Name'],
-                cost: parseFloat(row['Cost']) || 0,
-                costPerUnit: parseFloat(row['Cost Per Unit']) || 0,
-                unit: row['Unit'],
-                category: row['Category']
-              }));
-            setIngredients(importedIngredients);
-          }
-
-          // Read recipes
-          const recipesSheet = workbook.Sheets['Recipes'];
-          const recipeIngredientsSheet = workbook.Sheets['Recipe Ingredients'];
+          const recipeName = row[0]?.toString().trim();
+          const quantity = parseFloat(row[1]);
           
-          if (recipesSheet && recipeIngredientsSheet) {
-            const recipesData = XLSX.utils.sheet_to_json(recipesSheet);
-            const recipeIngredientsData = XLSX.utils.sheet_to_json(recipeIngredientsSheet);
-            
-            const importedRecipes = recipesData.map(row => {
-              const recipeIngredients = recipeIngredientsData
-                .filter(ri => ri['Recipe Name'] === row['Recipe Name'])
-                .map(ri => ({
-                  name: ri['Ingredient Name'],
-                  quantity: parseFloat(ri['Quantity']) || 0,
-                  unit: ri['Unit']
-                }));
+          if (!recipeName || isNaN(quantity)) return;
+          if (/^\d+$/.test(recipeName)) return; // Skip total rows
+          
+          const normalizedName = recipeName.toLowerCase();
+          const currentTotal = salesData.get(normalizedName) || 0;
+          salesData.set(normalizedName, currentTotal + quantity);
+        });
 
-              return {
-                id: Date.now() + Math.random(),
-                name: row['Recipe Name'],
-                description: row['Description'],
-                sellingPrice: parseFloat(row['Selling Price']) || 0,
-                averageMonthlySales: parseFloat(row['Monthly Sales']) || 0,
-                ingredients: recipeIngredients,
-                totalCost: parseFloat(row['Total Cost']) || 0,
-                profitMargin: parseFloat(row['Profit Margin']) || 0,
-                monthlyRevenue: parseFloat(row['Monthly Revenue']) || 0,
-                monthlyProfit: parseFloat(row['Monthly Profit']) || 0
-              };
-            });
+        // Update existing recipes with sales data
+        const updatedRecipes = recipes.map(recipe => {
+          const quarterlySales = salesData.get(recipe.name.toLowerCase().trim()) || recipe.quarterlySales || 0;
+          return {
+            ...recipe,
+            quarterlySales: quarterlySales
+          };
+        });
 
-            setRecipes(importedRecipes);
-          }
+        setRecipes(updatedRecipes);
+        alert('Sales data imported successfully!');
 
-          alert('Data imported successfully!');
-        } catch (error) {
-          console.error('Import error:', error);
-          alert('Error importing data: ' + error.message);
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    }
-    // Reset file input
-    event.target.value = '';
+        // Clear file input
+        event.target.value = '';
+
+      } catch (error) {
+        console.error('Import error:', error);
+        alert('Error importing sales data: ' + error.message);
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem('isAuthenticated');
   };
 
   const handleLogin = () => {
@@ -212,119 +198,173 @@ function App() {
   }
 
   return (
-    <div className="app-container">
-      <header className="glass-card mb-4">
-        <div className="header-content">
-          <h1>Conscious Cafe Recipe Calculator</h1>
-          <p className="text-secondary">Manage your recipe's cost & track margin simbly</p>
+    <div className="app">
+      <header className="app-header">
+        <div className="nav-container">
+          <div className="nav-left">
+            <img 
+              src={process.env.PUBLIC_URL + '/conscious-cafe-logo.svg'}
+              alt="Conscious Café" 
+              className="header-logo"
+              loading="eager"
+            />
+            <nav className="nav-tabs">
+              <NavLink to="/manager" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+                Recipes
+              </NavLink>
+              <NavLink to="/ingredients" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+                Ingredients
+              </NavLink>
+              <NavLink 
+                to="/create" 
+                className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}
+                onClick={handleCreateRecipe}
+              >
+                Create Recipe
+              </NavLink>
+              <NavLink to="/analytics" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+                Analytics
+              </NavLink>
+              <NavLink to="/data" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+                Import/Export
+              </NavLink>
+            </nav>
+          </div>
+          <div className="nav-actions">
+            <button className="icon-btn" onClick={handleLogout} title="Logout">
+              <img src={process.env.PUBLIC_URL + '/logout-icon.svg'} alt="Logout" className="btn-icon" />
+            </button>
+          </div>
         </div>
       </header>
 
-      <nav className="glass-card mb-4">
-        <div className="nav-tabs">
-          <button 
-            className={`btn ${activeTab === 'ingredients' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('ingredients')}
-          >
-            Ingredients
-          </button>
-          <button 
-            className={`btn ${activeTab === 'recipes' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('recipes')}
-          >
-            Recipes
-          </button>
-          <button 
-            className={`btn ${activeTab === 'analytics' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('analytics')}
-          >
-            Analytics
-          </button>
-          <button 
-            className={`btn ${activeTab === 'form' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => {
-              setEditingRecipe(null);
-              setActiveTab('form');
-            }}
-          >
-            {editingRecipe ? 'Editing Recipe' : 'Create Recipe'}
-          </button>
-          <button 
-            className={`btn`}
-            onClick={exportData}
-          >
-            Export to Excel
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            style={{ display: 'none' }}
-            accept=".xlsx, .xls"
-            onChange={importData}
+      <main>
+        <Routes>
+          <Route path="/" element={<Navigate to="/manager" replace />} />
+          
+          <Route 
+            path="/ingredients" 
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <IngredientsManager ingredients={ingredients} setIngredients={setIngredients} />
+              </ProtectedRoute>
+            } 
           />
-          <button 
-            className={`btn`}
-            onClick={() => fileInputRef.current.click()}
-          >
-            Import from Excel
-          </button>
-          <button 
-            className={`btn`}
-            onClick={handleLogout}
-          >
-            Logout
-          </button>
-        </div>
-      </nav>
 
-      <main className="main-content">
-        {activeTab === 'ingredients' && (
-          <section className="glass-card fade-in">
-            <IngredientsManager 
-              ingredients={ingredients} 
-              setIngredients={setIngredients} 
-            />
-          </section>
-        )}
+          <Route 
+            path="/manager" 
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <RecipeManager 
+                  recipes={recipes} 
+                  onEditRecipe={handleEditRecipe}
+                  onDeleteRecipe={handleDeleteRecipe}
+                  onViewRecipe={handleViewRecipe}
+                />
+              </ProtectedRoute>
+            } 
+          />
 
-        {activeTab === 'recipes' && (
-          <section className="glass-card fade-in">
-            <RecipeList 
-              recipes={recipes} 
-              onEditRecipe={handleEditRecipe}
-              onDeleteRecipe={handleDeleteRecipe}
-            />
-          </section>
-        )}
+          <Route 
+            path="/create" 
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <RecipeForm 
+                  ingredients={ingredients}
+                  onSubmit={handleRecipeSubmit}
+                  editingRecipe={editingRecipe}
+                  onCancel={() => {
+                    setEditingRecipe(null);
+                    navigate('/manager');
+                  }}
+                  mode={editingRecipe ? 'edit' : 'create'}
+                />
+              </ProtectedRoute>
+            } 
+          />
 
-        {activeTab === 'analytics' && (
-          <section className="glass-card fade-in">
-            <Analytics recipes={recipes} />
-          </section>
-        )}
+          <Route 
+            path="/view" 
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <RecipeForm 
+                  ingredients={ingredients}
+                  onSubmit={handleRecipeSubmit}
+                  editingRecipe={viewingRecipe}
+                  onCancel={handleCloseView}
+                  mode="view"
+                />
+              </ProtectedRoute>
+            } 
+          />
 
-        {activeTab === 'form' && (
-          <section className="glass-card fade-in">
-            <RecipeForm 
-              ingredients={ingredients}
-              recipes={recipes}
-              setRecipes={handleRecipeSubmit}
-              editingRecipe={editingRecipe}
-              onCancelEdit={handleCancelEdit}
-            />
-          </section>
-        )}
+          <Route 
+            path="/analytics" 
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <Analytics recipes={recipes} />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/data" 
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <div className="data-management">
+                  <h2>Data Management</h2>
+                  <div className="data-actions">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="file-input-hidden"
+                      accept=".xlsx, .xls"
+                      onChange={importData}
+                    />
+                    <button className="data-btn" onClick={exportData}>
+                      <img src="/export-icon.svg" alt="Export" />
+                      Export App Data
+                    </button>
+                    <button className="data-btn" onClick={() => fileInputRef.current.click()}>
+                      <img src="/import-icon.svg" alt="Import" />
+                      Import App Data
+                    </button>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={importSalesData}
+                      className="file-input-hidden"
+                      id="sales-file-input"
+                    />
+                    <button className="data-btn" onClick={() => document.getElementById('sales-file-input').click()}>
+                      <img src="/sales-icon.svg" alt="Sales" />
+                      Import QTR Sales
+                    </button>
+                  </div>
+                </div>
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route path="*" element={<Navigate to="/manager" replace />} />
+        </Routes>
       </main>
-
-      <footer className="glass-card mt-4">
+      <footer className="app-footer">
         <div className="footer-content">
-          <p className="text-secondary text-center">
-            {new Date().getFullYear()} Kavas Conscious Living LLP. All rights reserved.
-          </p>
+          <p className="footer-text">&copy; 2024 Kavas Conscious Living LLP. All rights reserved.</p>
         </div>
       </footer>
     </div>
   );
 }
 
-export default App;
+// Wrap App with Router
+const AppWrapper = () => {
+  return (
+    <Router>
+      <App />
+    </Router>
+  );
+};
+
+export default AppWrapper;

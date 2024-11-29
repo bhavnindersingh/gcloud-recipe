@@ -157,7 +157,7 @@ function ProfitabilityAnalysis({ recipes, ingredients }) {
             </p>
           </div>
           <div className="metric-card">
-            <h3>Total Monthly Revenue</h3>
+            <h3>Total Quarterly Revenue</h3>
             <p className="metric-value">
               {formatCurrency(sortedRecipes.reduce((sum, recipe) => 
                 sum + (recipe.sellingPrice * (recipe.averageMonthlySales || 0)), 0))}
