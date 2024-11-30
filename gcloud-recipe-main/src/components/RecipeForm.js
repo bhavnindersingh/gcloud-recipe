@@ -5,7 +5,6 @@ import '../styles/NewRecipeForm.css';
 const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'create' }) => {
   const [currentMode, setMode] = useState(mode);
   const [recipe, setRecipe] = useState({
-    id: Date.now(),
     name: '',
     category: '',
     description: '',
@@ -21,14 +20,7 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     profitMargin: 0,
     monthlyRevenue: 0,
     monthlyProfit: 0,
-    markupFactor: 0,
-    isOnPrintMenu: false,
-    isOnQrMenu: false,
-    isOnWebsiteMenu: false,
-    isForDelivery: false,
-    packagingMaterial: '',
-    packagingImage: null,
-    packagingImageUrl: ''
+    markupFactor: 0
   });
 
   const [selectedIngredient, setSelectedIngredient] = useState({
@@ -36,47 +28,18 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     quantity: ''
   });
 
-  const [notification, setNotification] = useState({
-    show: false,
-    message: '',
-    type: 'success'
-  });
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (editingRecipe) {
-      setRecipe({
-        id: editingRecipe.id,
-        name: editingRecipe.name || '',
-        category: editingRecipe.category || '',
-        description: editingRecipe.description || '',
-        preparationSteps: editingRecipe.preparationSteps || '',
-        cookingMethod: editingRecipe.cookingMethod || '',
-        platingInstructions: editingRecipe.platingInstructions || '',
-        chefsNotes: editingRecipe.chefsNotes || '',
-        ingredients: editingRecipe.ingredients || [],
-        overhead: editingRecipe.overhead || 10,
-        sellingPrice: editingRecipe.sellingPrice || '',
-        averageMonthlySales: editingRecipe.averageMonthlySales || '',
-        totalCost: editingRecipe.totalCost || 0,
-        profitMargin: editingRecipe.profitMargin || 0,
-        monthlyRevenue: editingRecipe.monthlyRevenue || 0,
-        monthlyProfit: editingRecipe.monthlyProfit || 0,
-        markupFactor: editingRecipe.markupFactor || 0,
-        isOnPrintMenu: editingRecipe.isOnPrintMenu || false,
-        isOnQrMenu: editingRecipe.isOnQrMenu || false,
-        isOnWebsiteMenu: editingRecipe.isOnWebsiteMenu || false,
-        isForDelivery: editingRecipe.isForDelivery || false,
-        packagingMaterial: editingRecipe.packagingMaterial || '',
-        packagingImage: editingRecipe.packagingImage || null,
-        packagingImageUrl: editingRecipe.packagingImageUrl || ''
-      });
+      setRecipe(editingRecipe);
     }
   }, [editingRecipe]);
 
   const showNotification = (message, type = 'success') => {
-    setNotification({ show: true, message, type });
+    setError(message);
     setTimeout(() => {
-      setNotification(prev => ({ ...prev, show: false }));
+      setError('');
     }, 3000);
   };
 
@@ -214,7 +177,7 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     updateCalculations();
   }, [recipe.ingredients, recipe.sellingPrice, recipe.averageMonthlySales, recipe.overhead]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!validateForm()) {
@@ -222,26 +185,45 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     }
 
     try {
-      const recipeToSubmit = {
-        ...recipe,
-        id: editingRecipe ? editingRecipe.id : Date.now(),
-        totalCost: calculateTotalCost(recipe.ingredients),
-        profitMargin: calculateProfitMargin(recipe.sellingPrice, calculateTotalCost(recipe.ingredients)),
-        monthlyRevenue: calculateMonthlyRevenue(recipe.sellingPrice, recipe.averageMonthlySales),
-        monthlyProfit: calculateMonthlyProfit(
-          recipe.sellingPrice,
-          calculateTotalCost(recipe.ingredients),
-          recipe.averageMonthlySales
-        ),
-        markupFactor: calculateMarkupFactor(recipe.sellingPrice, calculateTotalCost(recipe.ingredients))
+      const recipeData = {
+        name: recipe.name,
+        category: recipe.category,
+        selling_price: parseFloat(recipe.sellingPrice),
+        monthly_sales: parseInt(recipe.averageMonthlySales),
+        preparation_steps: recipe.preparationSteps,
+        cooking_method: recipe.cookingMethod,
+        plating_instructions: recipe.platingInstructions,
+        chefs_notes: recipe.chefsNotes,
+        ingredients: recipe.ingredients.map(ing => ({
+          id: ing.id,
+          quantity: parseFloat(ing.quantity)
+        }))
       };
 
-      onSubmit(recipeToSubmit);
-      showNotification(editingRecipe ? 'Recipe updated successfully' : 'Recipe created successfully');
+      const url = editingRecipe ? `http://localhost:3001/api/recipes/${editingRecipe.id}` : 'http://localhost:3001/api/recipes';
+      const method = editingRecipe ? 'PUT' : 'POST';
 
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(recipeData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save recipe');
+      }
+
+      const savedRecipe = await response.json();
+      
+      if (onSubmit) {
+        onSubmit(savedRecipe);
+      }
+
+      // Reset form if creating new recipe
       if (!editingRecipe) {
         setRecipe({
-          id: Date.now(),
           name: '',
           category: '',
           description: '',
@@ -257,46 +239,38 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
           profitMargin: 0,
           monthlyRevenue: 0,
           monthlyProfit: 0,
-          markupFactor: 0,
-          isOnPrintMenu: false,
-          isOnQrMenu: false,
-          isOnWebsiteMenu: false,
-          isForDelivery: false,
-          packagingMaterial: '',
-          packagingImage: null,
-          packagingImageUrl: ''
+          markupFactor: 0
         });
-        setSelectedIngredient({ id: '', quantity: '' });
       }
-    } catch (error) {
-      showNotification('Failed to save recipe. Please try again.', 'error');
-      console.error('Error saving recipe:', error);
+    } catch (err) {
+      setError('Failed to save recipe: ' + err.message);
+      console.error('Error saving recipe:', err);
     }
   };
 
   const validateForm = () => {
     if (!recipe.name.trim()) {
-      showNotification('Recipe name is required', 'error');
+      setError('Recipe name is required');
       return false;
     }
 
     if (!recipe.category) {
-      showNotification('Please select a category', 'error');
+      setError('Please select a category');
       return false;
     }
 
     if (recipe.ingredients.length === 0) {
-      showNotification('Add at least one ingredient', 'error');
+      setError('Add at least one ingredient');
       return false;
     }
 
     if (!recipe.preparationSteps.trim()) {
-      showNotification('Preparation steps are required', 'error');
+      setError('Preparation steps are required');
       return false;
     }
 
     if (!recipe.cookingMethod.trim()) {
-      showNotification('Cooking method is required', 'error');
+      setError('Cooking method is required');
       return false;
     }
 
@@ -326,12 +300,12 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
         </h1>
       </div>
       
-      {notification.show && (
-        <div className={`notification ${notification.type}`}>
+      {error && (
+        <div className="notification error">
           <span className="notification-icon">
-            {notification.type === 'success' ? '✅' : '❌'}
+            ❌
           </span>
-          {notification.message}
+          {error}
         </div>
       )}
 

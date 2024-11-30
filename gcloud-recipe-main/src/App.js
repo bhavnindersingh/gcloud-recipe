@@ -7,7 +7,6 @@ import RecipeManager from './components/RecipeManager';
 import Analytics from './components/Analytics';
 import Login from './components/Login';
 import ProtectedRoute from './components/ProtectedRoute';
-import { sampleIngredients, sampleRecipes } from './data/sampleData';
 import * as XLSX from 'xlsx';
 import './styles/App.css';
 
@@ -15,35 +14,45 @@ function App() {
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
   
-  // Initialize state from localStorage or use sample data as fallback
-  const [ingredients, setIngredients] = useState(() => {
-    const savedIngredients = localStorage.getItem('ingredients');
-    return savedIngredients ? JSON.parse(savedIngredients) : sampleIngredients;
-  });
-
-  const [recipes, setRecipes] = useState(() => {
-    const savedRecipes = localStorage.getItem('recipes');
-    return savedRecipes ? JSON.parse(savedRecipes) : sampleRecipes;
-  });
-
+  const [ingredients, setIngredients] = useState([]);
+  const [recipes, setRecipes] = useState([]);
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [viewingRecipe, setViewingRecipe] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('isAuthenticated') === 'true';
+    return sessionStorage.getItem('isAuthenticated') === 'true';
   });
 
-  // Save to localStorage whenever data changes
+  // Fetch data from database on component mount
   useEffect(() => {
-    localStorage.setItem('ingredients', JSON.stringify(ingredients));
-  }, [ingredients]);
-
-  useEffect(() => {
-    localStorage.setItem('recipes', JSON.stringify(recipes));
-  }, [recipes]);
-
-  useEffect(() => {
-    localStorage.setItem('isAuthenticated', isAuthenticated);
+    if (isAuthenticated) {
+      fetchIngredients();
+      fetchRecipes();
+    }
   }, [isAuthenticated]);
+
+  const fetchIngredients = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/api/ingredients');
+      if (response.ok) {
+        const data = await response.json();
+        setIngredients(data);
+      }
+    } catch (error) {
+      console.error('Error fetching ingredients:', error);
+    }
+  };
+
+  const fetchRecipes = async () => {
+    try {
+      const response = await fetch('https://example.com/api/recipes');
+      if (response.ok) {
+        const data = await response.json();
+        setRecipes(data);
+      }
+    } catch (error) {
+      console.error('Error fetching recipes:', error);
+    }
+  };
 
   const handleRecipeSubmit = (recipe) => {
     setRecipes(prevRecipes => {
@@ -184,13 +193,16 @@ function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('isAuthenticated');
-  };
-
   const handleLogin = () => {
     setIsAuthenticated(true);
+    sessionStorage.setItem('isAuthenticated', 'true');
+    navigate('/manager');
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    sessionStorage.removeItem('isAuthenticated');
+    navigate('/login');
   };
 
   if (!isAuthenticated) {

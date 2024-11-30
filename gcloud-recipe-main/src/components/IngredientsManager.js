@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { INGREDIENT_CATEGORIES } from '../constants/ingredientCategories';
 import '../styles/shared.css';
 import '../styles/IngredientsManager.css';
+
+const API_URL = 'http://localhost:3001/api';
 
 const IngredientsManager = ({ ingredients, setIngredients }) => {
   const fileInputRef = useRef(null);
@@ -15,12 +17,31 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
   });
   const [error, setError] = useState('');
 
+  // Fetch ingredients on component mount
+  useEffect(() => {
+    fetchIngredients();
+  }, []);
+
+  const fetchIngredients = async () => {
+    try {
+      console.log('Fetching ingredients from:', `${API_URL}/ingredients`);
+      const response = await fetch(`${API_URL}/ingredients`);
+      if (!response.ok) throw new Error('Failed to fetch ingredients');
+      const data = await response.json();
+      console.log('Fetched ingredients:', data);
+      setIngredients(data);
+    } catch (err) {
+      setError('Failed to load ingredients');
+      console.error('Error fetching ingredients:', err);
+    }
+  };
+
   // Filter ingredients based on search term
   const filteredIngredients = ingredients.filter(ingredient => {
     const searchLower = searchTerm.toLowerCase();
     return (
       ingredient.name.toLowerCase().includes(searchLower) ||
-      ingredient.category.toLowerCase().includes(searchLower) ||
+      ingredient.category?.toLowerCase().includes(searchLower) ||
       ingredient.unit.toLowerCase().includes(searchLower)
     );
   });
@@ -52,7 +73,7 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
     return '';
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const validationError = validateIngredient();
     if (validationError) {
@@ -60,23 +81,51 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
       return;
     }
 
-    const newIngredientWithId = {
-      ...newIngredient,
-      id: Date.now(),
-      cost: Number(newIngredient.cost)
-    };
+    try {
+      console.log('Saving ingredient:', newIngredient);
+      const response = await fetch(`${API_URL}/ingredients`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: newIngredient.name,
+          cost: Number(newIngredient.cost),
+          unit: newIngredient.unit,
+          category: newIngredient.category
+        }),
+      });
 
-    setIngredients(prev => [...prev, newIngredientWithId]);
-    setNewIngredient({
-      name: '',
-      unit: '',
-      cost: '',
-      category: 'Vegetables & Fruits'
-    });
+      if (!response.ok) throw new Error('Failed to add ingredient');
+      
+      const savedIngredient = await response.json();
+      console.log('Saved ingredient:', savedIngredient);
+      setIngredients(prev => [...prev, savedIngredient]);
+      setNewIngredient({
+        name: '',
+        unit: '',
+        cost: '',
+        category: 'Vegetables & Fruits'
+      });
+    } catch (err) {
+      setError('Failed to save ingredient');
+      console.error('Error saving ingredient:', err);
+    }
   };
 
-  const handleDelete = (id) => {
-    setIngredients(prev => prev.filter(ingredient => ingredient.id !== id));
+  const handleDelete = async (id) => {
+    try {
+      const response = await fetch(`${API_URL}/ingredients/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) throw new Error('Failed to delete ingredient');
+      
+      setIngredients(prev => prev.filter(ingredient => ingredient.id !== id));
+    } catch (err) {
+      setError('Failed to delete ingredient');
+      console.error('Error deleting ingredient:', err);
+    }
   };
 
   const exportIngredients = () => {
@@ -167,169 +216,172 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
   };
 
   return (
-    <div className="ingredients-manager">
-      <div className="header-section">
-        <h2>Ingredient Management</h2>
-        <div className="data-buttons">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={importIngredients}
-            className="file-input-hidden"
-            accept=".xlsx,.xls"
-          />
-          <button className="icon-btn" onClick={exportIngredients} title="Export to Excel">
-            <img src={process.env.PUBLIC_URL + '/export-icon.svg'} alt="Export" className="btn-icon" />
-          </button>
-          <button className="icon-btn" onClick={() => fileInputRef.current.click()} title="Import from Excel">
-            <img src={process.env.PUBLIC_URL + '/import-icon.svg'} alt="Import" className="btn-icon" />
-          </button>
-        </div>
-      </div>
-      
-      <form onSubmit={handleSubmit} className="neo-card mb-4">
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label" htmlFor="name">Name</label>
+    <div className="ingredients-manager-container">
+      <div className="page-title-container">
+        <h1 className="page-title">
+          Ingredient Management
+          <div className="data-buttons">
             <input
-              type="text"
-              id="name"
-              name="name"
-              className="form-input"
-              value={newIngredient.name}
-              onChange={handleInputChange}
-              placeholder="Enter ingredient name"
+              type="file"
+              ref={fileInputRef}
+              onChange={importIngredients}
+              className="file-input-hidden"
+              accept=".xlsx,.xls"
             />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="unit">Unit</label>
-            <select
-              id="unit"
-              name="unit"
-              className="form-input form-select"
-              value={newIngredient.unit}
-              onChange={handleInputChange}
-            >
-              <option value="">Select unit</option>
-              <option value="kg">Kilogram (kg)</option>
-              <option value="g">Gram (g)</option>
-              <option value="l">Liter (l)</option>
-              <option value="ml">Milliliter (ml)</option>
-              <option value="pcs">Pieces (pcs)</option>
-              <option value="dozen">Dozen</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="cost">Cost (₹)</label>
-            <input
-              type="number"
-              id="cost"
-              name="cost"
-              className="form-input"
-              value={newIngredient.cost}
-              onChange={handleInputChange}
-              placeholder="Enter cost per unit"
-              step="0.01"
-              min="0"
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="category">Category</label>
-            <select
-              id="category"
-              name="category"
-              className="form-input form-select"
-              value={newIngredient.category}
-              onChange={handleInputChange}
-            >
-              {INGREDIENT_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {error && <p className="error-message text-error mb-3">{error}</p>}
-
-        <div className="form-actions">
-          <div className="actions-left">
-            <button type="submit" className="btn btn-success">
-              Add Ingredient
+            <button className="icon-btn" onClick={exportIngredients} title="Export to Excel">
+              <img src={process.env.PUBLIC_URL + '/export-icon.svg'} alt="Export" className="btn-icon" />
+            </button>
+            <button className="icon-btn" onClick={() => fileInputRef.current.click()} title="Import from Excel">
+              <img src={process.env.PUBLIC_URL + '/import-icon.svg'} alt="Import" className="btn-icon" />
             </button>
           </div>
-          <div className="actions-right">
-            <div className="search-wrapper">
+        </h1>
+      </div>
+      <div className="ingredients-manager">
+        <form onSubmit={handleSubmit} className="neo-card mb-4">
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label" htmlFor="name">Name</label>
               <input
                 type="text"
-                placeholder="Search ingredients..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="search-input"
+                id="name"
+                name="name"
+                className="form-input"
+                value={newIngredient.name}
+                onChange={handleInputChange}
+                placeholder="Enter ingredient name"
               />
-              <button
-                type="button"
-                className="btn btn-success search-button"
-                disabled={!searchTerm}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="unit">Unit</label>
+              <select
+                id="unit"
+                name="unit"
+                className="form-input form-select"
+                value={newIngredient.unit}
+                onChange={handleInputChange}
               >
-                Search
-              </button>
-              {searchTerm && (
-                <button
-                  type="button"
-                  className="search-clear-btn"
-                  onClick={() => setSearchTerm('')}
-                  title="Clear search"
-                >
-                  ×
-                </button>
-              )}
+                <option value="">Select unit</option>
+                <option value="kg">Kilogram (kg)</option>
+                <option value="g">Gram (g)</option>
+                <option value="l">Liter (l)</option>
+                <option value="ml">Milliliter (ml)</option>
+                <option value="pcs">Pieces (pcs)</option>
+                <option value="dozen">Dozen</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="cost">Cost (₹)</label>
+              <input
+                type="number"
+                id="cost"
+                name="cost"
+                className="form-input"
+                value={newIngredient.cost}
+                onChange={handleInputChange}
+                placeholder="Enter cost per unit"
+                step="0.01"
+                min="0"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="category">Category</label>
+              <select
+                id="category"
+                name="category"
+                className="form-input form-select"
+                value={newIngredient.category}
+                onChange={handleInputChange}
+              >
+                {INGREDIENT_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-        </div>
-      </form>
 
-      <div className="table-container">
-        <table className="modern-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Unit</th>
-              <th>Cost (₹)</th>
-              <th>Category</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredIngredients.map(ingredient => (
-              <tr key={ingredient.id} className="fade-in">
-                <td>{ingredient.name}</td>
-                <td>{ingredient.unit}</td>
-                <td>₹{ingredient.cost.toFixed(2)}</td>
-                <td>{ingredient.category}</td>
-                <td>
+          {error && <p className="error-message text-error mb-3">{error}</p>}
+
+          <div className="form-actions">
+            <div className="actions-left">
+              <button type="submit" className="btn btn-success">
+                Add Ingredient
+              </button>
+            </div>
+            <div className="actions-right">
+              <div className="search-wrapper">
+                <input
+                  type="text"
+                  placeholder="Search ingredients..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="search-input"
+                />
+                <button
+                  type="button"
+                  className="btn btn-success search-button"
+                  disabled={!searchTerm}
+                >
+                  Search
+                </button>
+                {searchTerm && (
                   <button
-                    onClick={() => handleDelete(ingredient.id)}
-                    className="btn btn-danger"
+                    type="button"
+                    className="search-clear-btn"
+                    onClick={() => setSearchTerm('')}
+                    title="Clear search"
                   >
-                    Delete
+                    ×
                   </button>
-                </td>
-              </tr>
-            ))}
-            {filteredIngredients.length === 0 && (
+                )}
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div className="table-container">
+          <table className="modern-table">
+            <thead>
               <tr>
-                <td colSpan="5" className="text-center text-secondary">
-                  {ingredients.length === 0 ? 'No ingredients added yet' : 'No matching ingredients found'}
-                </td>
+                <th>Name</th>
+                <th>Unit</th>
+                <th>Cost (₹)</th>
+                <th>Category</th>
+                <th>Action</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredIngredients.map(ingredient => (
+                <tr key={ingredient.id} className="fade-in">
+                  <td>{ingredient.name}</td>
+                  <td>{ingredient.unit}</td>
+                  <td>₹{parseFloat(ingredient.cost || 0).toFixed(2)}</td>
+                  <td>{ingredient.category || 'Vegetables & Fruits'}</td>
+                  <td>
+                    <button
+                      onClick={() => handleDelete(ingredient.id)}
+                      className="btn btn-danger"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filteredIngredients.length === 0 && (
+                <tr>
+                  <td colSpan="5" className="text-center text-secondary">
+                    {ingredients.length === 0 ? 'No ingredients added yet' : 'No matching ingredients found'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

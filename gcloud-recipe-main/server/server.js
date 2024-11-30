@@ -5,18 +5,41 @@ require('dotenv').config();
 
 const app = express();
 
-// Configure CORS for production
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+// Configure CORS with specific options
+const corsOptions = {
+  origin: ['http://localhost:3002', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type'],
   credentials: true
-}));
+};
 
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Database configuration
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  user: 'postgres',
+  host: 'localhost',
+  database: 'recipe_db',
+  password: 'postgres',
+  port: 5432
+});
+
+// Test database connection
+pool.connect((err, client, done) => {
+  if (err) {
+    console.error('Error connecting to the database:', err);
+  } else {
+    console.log('Successfully connected to database');
+    client.query('SELECT NOW()', (err, result) => {
+      done();
+      if (err) {
+        console.error('Error executing test query:', err);
+      } else {
+        console.log('Database test query successful:', result.rows[0]);
+      }
+    });
+  }
 });
 
 // Health check endpoint
@@ -27,22 +50,37 @@ app.get('/api/health', (req, res) => {
 // Ingredient routes
 app.get('/api/ingredients', async (req, res) => {
     try {
+        console.log('Attempting to fetch ingredients...');
         const result = await pool.query('SELECT * FROM ingredients ORDER BY name');
-        res.json(result.rows);
+        // Ensure cost is a number for each ingredient
+        const ingredients = result.rows.map(ingredient => ({
+            ...ingredient,
+            cost: parseFloat(ingredient.cost)
+        }));
+        console.log('Successfully fetched ingredients:', ingredients.length);
+        res.json(ingredients);
     } catch (err) {
+        console.error('Error fetching ingredients:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
 app.post('/api/ingredients', async (req, res) => {
-    const { name, cost, unit, supplier } = req.body;
+    const { name, cost, unit, category } = req.body;
     try {
+        console.log('Attempting to save ingredient:', { name, cost: parseFloat(cost), unit, category });
         const result = await pool.query(
-            'INSERT INTO ingredients (name, cost, unit, supplier) VALUES ($1, $2, $3, $4) RETURNING *',
-            [name, cost, unit, supplier]
+            'INSERT INTO ingredients (name, cost, unit, category) VALUES ($1, $2, $3, $4) RETURNING *',
+            [name, parseFloat(cost), unit, category]
         );
-        res.json(result.rows[0]);
+        console.log('Successfully saved ingredient:', result.rows[0]);
+        const savedIngredient = {
+            ...result.rows[0],
+            cost: parseFloat(result.rows[0].cost)
+        };
+        res.json(savedIngredient);
     } catch (err) {
+        console.error('Error saving ingredient:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -80,15 +118,19 @@ app.get('/api/recipes', async (req, res) => {
 });
 
 app.post('/api/recipes', async (req, res) => {
-    const { name, category, selling_price, monthly_sales, ingredients } = req.body;
+    const { name, category, selling_price, monthly_sales, preparation_steps, cooking_method, plating_instructions, chefs_notes, ingredients } = req.body;
+    
     try {
         // Start a transaction
         await pool.query('BEGIN');
         
         // Insert recipe
         const recipeResult = await pool.query(
-            'INSERT INTO recipes (name, category, selling_price, monthly_sales) VALUES ($1, $2, $3, $4) RETURNING *',
-            [name, category, selling_price, monthly_sales]
+            `INSERT INTO recipes 
+            (name, category, selling_price, monthly_sales, preparation_steps, cooking_method, plating_instructions, chefs_notes) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+            RETURNING *`,
+            [name, category, selling_price, monthly_sales, preparation_steps, cooking_method, plating_instructions, chefs_notes]
         );
         
         const recipe = recipeResult.rows[0];
@@ -101,9 +143,10 @@ app.post('/api/recipes', async (req, res) => {
             );
         }
         
+        // Commit transaction
         await pool.query('COMMIT');
         
-        // Get complete recipe with ingredients
+        // Fetch the complete recipe with ingredients
         const completeRecipe = await pool.query(
             `SELECT r.*, 
             json_agg(json_build_object(
@@ -121,25 +164,106 @@ app.post('/api/recipes', async (req, res) => {
             [recipe.id]
         );
         
-        res.status(201).json(completeRecipe.rows[0]);
+        res.json(completeRecipe.rows[0]);
     } catch (err) {
         await pool.query('ROLLBACK');
         res.status(500).json({ error: err.message });
     }
 });
 
-app.delete('/api/recipes/:id', async (req, res) => {
+app.put('/api/recipes/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, category, selling_price, monthly_sales, preparation_steps, cooking_method, plating_instructions, chefs_notes, ingredients } = req.body;
+    
     try {
+        // Start a transaction
         await pool.query('BEGIN');
-        // Delete recipe ingredients first
-        await pool.query('DELETE FROM recipe_ingredients WHERE recipe_id = $1', [req.params.id]);
-        // Then delete the recipe
-        await pool.query('DELETE FROM recipes WHERE id = $1', [req.params.id]);
+        
+        // Update recipe
+        const recipeResult = await pool.query(
+            `UPDATE recipes 
+            SET name = $1, category = $2, selling_price = $3, monthly_sales = $4,
+                preparation_steps = $5, cooking_method = $6, plating_instructions = $7, chefs_notes = $8
+            WHERE id = $9 
+            RETURNING *`,
+            [name, category, selling_price, monthly_sales, preparation_steps, cooking_method, plating_instructions, chefs_notes, id]
+        );
+        
+        if (recipeResult.rows.length === 0) {
+            throw new Error('Recipe not found');
+        }
+        
+        // Delete existing recipe ingredients
+        await pool.query('DELETE FROM recipe_ingredients WHERE recipe_id = $1', [id]);
+        
+        // Insert updated recipe ingredients
+        for (let ingredient of ingredients) {
+            await pool.query(
+                'INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity) VALUES ($1, $2, $3)',
+                [id, ingredient.id, ingredient.quantity]
+            );
+        }
+        
+        // Commit transaction
         await pool.query('COMMIT');
+        
+        // Fetch the complete recipe with ingredients
+        const completeRecipe = await pool.query(
+            `SELECT r.*, 
+            json_agg(json_build_object(
+                'id', i.id,
+                'name', i.name,
+                'cost', i.cost,
+                'unit', i.unit,
+                'quantity', ri.quantity
+            )) as ingredients
+            FROM recipes r
+            LEFT JOIN recipe_ingredients ri ON r.id = ri.recipe_id
+            LEFT JOIN ingredients i ON ri.ingredient_id = i.id
+            WHERE r.id = $1
+            GROUP BY r.id`,
+            [id]
+        );
+        
+        res.json(completeRecipe.rows[0]);
+    } catch (err) {
+        await pool.query('ROLLBACK');
+        if (err.message === 'Recipe not found') {
+            res.status(404).json({ error: err.message });
+        } else {
+            res.status(500).json({ error: err.message });
+        }
+    }
+});
+
+app.delete('/api/recipes/:id', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // Start a transaction
+        await pool.query('BEGIN');
+        
+        // Delete recipe ingredients first (due to foreign key constraint)
+        await pool.query('DELETE FROM recipe_ingredients WHERE recipe_id = $1', [id]);
+        
+        // Delete recipe
+        const result = await pool.query('DELETE FROM recipes WHERE id = $1', [id]);
+        
+        if (result.rowCount === 0) {
+            throw new Error('Recipe not found');
+        }
+        
+        // Commit transaction
+        await pool.query('COMMIT');
+        
         res.json({ success: true });
     } catch (err) {
         await pool.query('ROLLBACK');
-        res.status(500).json({ error: err.message });
+        if (err.message === 'Recipe not found') {
+            res.status(404).json({ error: err.message });
+        } else {
+            res.status(500).json({ error: err.message });
+        }
     }
 });
 

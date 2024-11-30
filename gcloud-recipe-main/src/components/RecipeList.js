@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { RECIPE_CATEGORIES } from '../data/sampleData';
 import '../styles/RecipeList.css';
 
+// Define categories here instead of importing
+const RECIPE_CATEGORIES = ['Drinks Bar', 'Hot Food', 'Bakery'];
 const ITEMS_PER_PAGE = 10;
 
 const RecipeList = ({ recipes = [], ingredients = [], onEditRecipe, onDeleteRecipe, setRecipes, selectedCategory }) => {
