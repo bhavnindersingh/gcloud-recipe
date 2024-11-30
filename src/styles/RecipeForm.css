@@ -1,0 +1,258 @@
+@import './shared.css';
+
+.recipe-form {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+  background-color: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.recipe-form h2 {
+  color: #2c3e50;
+  margin-bottom: 2rem;
+  font-size: 1.8rem;
+  text-align: center;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 1rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #2c3e50;
+  font-weight: 500;
+  font-family: "Futura", "Trebuchet MS", Arial, sans-serif;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #dfe6e9;
+  border-radius: 5px;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  font-family: "Futura", "Trebuchet MS", Arial, sans-serif;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.ingredients-section {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.ingredients-section h3 {
+  color: #2c3e50;
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+}
+
+.pricing-section {
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.ingredient-form {
+  display: grid;
+  grid-template-columns: 2fr 1fr 120px;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.add-ingredient-button {
+  background: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: "Futura", "Trebuchet MS", Arial, sans-serif;
+  font-weight: 500;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.add-ingredient-button::before {
+  content: '+';
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.add-ingredient-button:hover {
+  background: #219a52;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.3);
+}
+
+.ingredients-list {
+  margin-top: 1.5rem;
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.ingredients-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ingredients-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem;
+  border-bottom: 1px solid #dfe6e9;
+  font-size: 0.95rem;
+}
+
+.ingredients-list li:last-child {
+  border-bottom: none;
+}
+
+.remove-button {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: "Futura", "Trebuchet MS", Arial, sans-serif;
+}
+
+.remove-button:hover {
+  background: #c0392b;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
+}
+
+.total-cost {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 2px solid #dfe6e9;
+  font-weight: bold;
+  text-align: right;
+  font-size: 1.1rem;
+}
+
+.submit-button {
+  width: 100%;
+  margin-top: 2rem;
+  padding: 15px;
+  font-size: 1.1rem;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: "Futura", "Trebuchet MS", Arial, sans-serif;
+  font-weight: 500;
+}
+
+.submit-button:hover {
+  background: #2980b9;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+}
+
+.error-message {
+  background-color: #feeaea;
+  color: #e74c3c;
+  padding: 1rem;
+  border-radius: 5px;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.unit {
+  margin-left: 0.5rem;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.form-static {
+  padding: 0.75rem 1rem;
+  background: var(--surface-light);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+textarea.form-input {
+  resize: vertical;
+  min-height: 100px;
+}
+
+/* Pricing Section Highlights */
+.pricing-section .form-static {
+  font-size: 1.125rem;
+}
+
+.pricing-section .form-static:nth-child(2) {
+  color: var(--text-secondary);
+}
+
+.pricing-section .form-static:nth-child(3) {
+  color: var(--success);
+}
+
+.pricing-section .form-static:nth-child(4) {
+  color: var(--primary);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .ingredients-section,
+  .pricing-section {
+    padding: 1rem;
+    margin: 0 -1rem 1rem -1rem;
+    border-radius: 0;
+  }
+
+  .form-static {
+    font-size: 1rem;
+  }
+
+  .recipe-form {
+    padding: 1rem;
+  }
+
+  .ingredient-form {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .add-ingredient-button {
+    width: 100%;
+  }
+  
+  .ingredients-list li {
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+  }
+}
