@@ -10,8 +10,10 @@ import {
   ArcElement,
 } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import { RECIPE_CATEGORIES } from '../data/sampleData';
 import '../styles/Analytics.css';
+
+// Define categories here instead of importing
+const RECIPE_CATEGORIES = ['Drinks Bar', 'Hot Food', 'Bakery'];
 
 ChartJS.register(
   CategoryScale,

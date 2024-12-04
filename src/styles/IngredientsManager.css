@@ -1,7 +1,41 @@
-.ingredients-manager {
-  padding: 2rem;
-  max-width: 1200px;
+.ingredients-manager-container {
+  max-width: 1400px;
   margin: 0 auto;
+  padding: 1.5rem;
+  background: #f8fafc;
+  min-height: 0;
+  height: auto;
+  padding-bottom: 2rem;
+}
+
+.page-title-container {
+  margin: 0 0 2rem 0;
+}
+
+.page-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(to right, #ffffff, #f8fafc);
+  padding: 2rem 2.5rem;
+  border-radius: 16px;
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #1e293b;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border-left: 6px solid #3b82f6;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 2.5rem;
+  transition: all 0.3s ease;
+}
+
+.ingredients-manager {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-top: 2rem;
 }
 
 .header-section {
@@ -70,10 +104,10 @@
 }
 
 .neo-card {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  border-radius: 12px;
   padding: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   margin-bottom: 2rem;
 }
 

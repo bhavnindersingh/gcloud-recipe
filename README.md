@@ -173,3 +173,46 @@ gcloud run deploy recipe-calculator --image gcr.io/conscious-cafe/recipe-calcula
 ### v1.0.0
 - Initial release with basic functionality
 - Local storage based data management
+
+
+I have to add this later, after making everything work
++----------------------------------------+
+|           Recipe Search & Filters       |
++----------------------------------------+
+| Quick Filters:                         |
+| [Recent] [Top Sellers] [Most Profit]   |
+| [New] [Incomplete] [Pending Menu]                   |
+|----------------------------------------|
+| Search:                                |
+| [🔍 Search recipes, ingredients...]    |
+|----------------------------------------|
+
+|----------------------------------------|
+| Categories:                            |
+| [□ Drinks] [□ Hot Food] [□ Bakery]    |
+|----------------------------------------|
+| Sort By:                               |
+| [Latest ↓] [Sales ↓] [Profit ↓]       |
++----------------------------------------+
+[COGS] [Total Cost] [Selling Price] [Profit] [Margin] [ROI]
+
+
+When I click on the edit of a recipe card, a new link should open up localhost/3002/manager/recipe-editor/
+
+On this page two button should come.
+1) Update Recipe Button
+2) Cancel button
+
+When the update recipe button is clicked, user should be taken back to the Manager page, after saving the changes made, user should be taken back to the localhost/3002/manager page.
+
+and cancel button, should take the user back to localhost/3002/manager without making any changes.
+
+1. also points to be checked while updating a recipe are 
+            a. data validation of all fields
+            b. and an update toast message of Updte succesful
+            c.  
+
+
+            Indian mechanical keyboards
+
+2. 

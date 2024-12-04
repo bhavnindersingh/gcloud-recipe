@@ -1,6 +1,4 @@
-const API_URL = process.env.NODE_ENV === 'development' 
-  ? 'http://localhost:3001/api'
-  : '/api';
+const API_URL = 'http://localhost:3001/api';
 
 // In-memory storage for development
 let inMemoryIngredients = [];

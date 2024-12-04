@@ -20,6 +20,13 @@ CREATE TABLE recipes (
     category VARCHAR(100),
     selling_price DECIMAL(10,2),
     monthly_sales INTEGER,
+    bash
+    
+    preparation_steps TEXT,
+    cooking_method TEXT,
+    plating_instructions TEXT,
+    chefs_notes TEXT,
+    menu_readiness VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
