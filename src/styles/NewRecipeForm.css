@@ -52,19 +52,18 @@
 
 /* Common Section Styles */
 .form-section {
-  padding: 1.5rem;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  transition: all 0.3s ease;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  margin-bottom: 1.5rem;
-  height: auto;
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-.form-section:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.06);
+.form-section h2, .form-section h3 {
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 1.5rem;
+  font-weight: 600;
 }
 
 .form-section h3 {
@@ -191,34 +190,23 @@
   color: #1e293b;
 }
 
-@media (max-width: 640px) {
-  .basic-info-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .form-group {
-    gap: 0.4rem;
-  }
-  
-  .form-group input,
-  .form-group select {
-    padding: 0.75rem;
-  }
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-@media (max-width: 768px) {
-  .form-group.overhead-group {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  
-  .form-group.overhead-group label {
-    min-width: 100%;
-  }
-  
-  .overhead-input-wrapper input {
-    width: 80px;
-  }
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
 }
 
 /* SOP Section */
@@ -296,20 +284,6 @@
   margin-bottom: 2rem;
   padding-bottom: 1rem;
   border-bottom: 2px solid rgba(59, 130, 246, 0.2);
-}
-
-@media (max-width: 768px) {
-  .form-section.sop-section {
-    border-top: 4px solid #3b82f6;
-  }
-
-  .sop-content {
-    padding: 1.5rem;
-  }
-
-  .sop-content textarea {
-    min-height: 150px;
-  }
 }
 
 /* Ingredients Section */
@@ -562,4 +536,126 @@
   outline: none;
   border-color: #3498db;
   box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+/* Image Upload Styles */
+.image-upload-container {
+  margin: 15px 0;
+  width: 100%;
+}
+
+.image-preview-container {
+  position: relative;
+  display: inline-block;
+  margin: 10px 0;
+  border: 1px solid #ddd;
+  padding: 5px;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.image-preview {
+  max-width: 200px;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+
+.remove-image-btn {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  padding: 0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: all 0.2s ease;
+}
+
+.remove-image-btn:hover {
+  background-color: #c82333;
+  transform: scale(1.1);
+}
+
+.file-input-container {
+  width: 100%;
+  margin: 10px 0;
+}
+
+.file-input-container input[type="file"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.file-input-container input[type="file"]:hover {
+  border-color: #80bdff;
+}
+
+/* Form group styling */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-control {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.form-control:focus {
+  border-color: #80bdff;
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+
+/* Error message styling */
+.error-message {
+  color: #dc3545;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* Delivery Image Section */
+.delivery-image-section {
+  transition: all 0.3s ease-in-out;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -15,6 +18,40 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Configure multer for multiple file uploads
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, path.join(__dirname, 'uploads'));
+    },
+    filename: function (req, file, cb) {
+      // Create unique filename with timestamp
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+  }),
+  fileFilter: function (req, file, cb) {
+    // Accept only image files
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed!'));
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+// Middleware to handle multiple file uploads
+const uploadFields = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'delivery_image', maxCount: 1 }
+]);
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Database configuration
 const pool = new Pool({
@@ -41,6 +78,16 @@ pool.connect((err, client, done) => {
     });
   }
 });
+
+// Run migration for image_url column
+pool.query('ALTER TABLE recipes ADD COLUMN IF NOT EXISTS image_url TEXT;')
+  .then(() => console.log('Added image_url column'))
+  .catch(err => console.error('Error adding image_url column:', err));
+
+// Run migration for delivery_image_url column
+pool.query('ALTER TABLE recipes ADD COLUMN IF NOT EXISTS delivery_image_url TEXT;')
+  .then(() => console.log('Added delivery_image_url column'))
+  .catch(err => console.error('Error adding delivery_image_url column:', err));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -173,213 +220,255 @@ app.get('/api/recipes', async (req, res) => {
     }
 });
 
-app.post('/api/recipes', async (req, res) => {
-    try {
-        console.log('Creating new recipe:', req.body);
-
-        // Input validation
-        if (!req.body.name || !req.body.category) {
-            throw new Error('Name and category are required');
-        }
-
-        await pool.query('BEGIN');
-
-        try {
-            // Insert recipe
-            const result = await pool.query(
-                `INSERT INTO recipes (
-                    name, category, description,
-                    preparation_steps, cooking_method, plating_instructions,
-                    chefs_notes, selling_price, monthly_sales,
-                    overhead, print_menu_ready, qr_menu_ready,
-                    website_menu_ready, available_for_delivery, delivery_image_url,
-                    total_cost, profit_margin, monthly_revenue,
-                    monthly_profit, markup_factor
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-                ) RETURNING *`,
-                [
-                    req.body.name,
-                    req.body.category,
-                    req.body.description || '',
-                    req.body.preparation_steps || '',
-                    req.body.cooking_method || '',
-                    req.body.plating_instructions || '',
-                    req.body.chefs_notes || '',
-                    req.body.selling_price || 0,
-                    req.body.monthly_sales || 0,
-                    req.body.overhead || 10,
-                    req.body.print_menu_ready || false,
-                    req.body.qr_menu_ready || false,
-                    req.body.website_menu_ready || false,
-                    req.body.available_for_delivery || false,
-                    req.body.delivery_image_url || '',
-                    req.body.total_cost || 0,
-                    req.body.profit_margin || 0,
-                    req.body.monthly_revenue || 0,
-                    req.body.monthly_profit || 0,
-                    req.body.markup_factor || 0
-                ]
-            );
-
-            // Handle ingredients if provided
-            if (req.body.ingredients && Array.isArray(req.body.ingredients)) {
-                for (const ingredient of req.body.ingredients) {
-                    await pool.query(
-                        'INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity) VALUES ($1, $2, $3)',
-                        [result.rows[0].id, ingredient.id, ingredient.quantity || 0]
-                    );
-                }
-            }
-
-            await pool.query('COMMIT');
-
-            // Fetch complete recipe with ingredients
-            const completeRecipe = await pool.query(
-                `SELECT r.*, 
-                json_agg(
-                    CASE WHEN i.id IS NOT NULL THEN
-                        json_build_object(
-                            'id', i.id,
-                            'name', i.name,
-                            'cost', i.cost,
-                            'unit', i.unit,
-                            'quantity', ri.quantity
-                        )
-                    ELSE NULL END
-                ) as ingredients
-                FROM recipes r
-                LEFT JOIN recipe_ingredients ri ON r.id = ri.recipe_id
-                LEFT JOIN ingredients i ON ri.ingredient_id = i.id
-                WHERE r.id = $1
-                GROUP BY r.id`,
-                [result.rows[0].id]
-            );
-
-            // Filter out null values from ingredients array
-            const finalRecipe = {
-                ...completeRecipe.rows[0],
-                ingredients: completeRecipe.rows[0].ingredients.filter(i => i !== null)
-            };
-
-            res.json(finalRecipe);
-
-        } catch (err) {
-            await pool.query('ROLLBACK');
-            throw err;
-        }
-    } catch (err) {
-        console.error('Error creating recipe:', err);
-        res.status(500).json({ 
-            error: 'Failed to create recipe', 
-            details: err.message 
-        });
+app.post('/api/recipes', uploadFields, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    // Validate required fields
+    const { name, category } = req.body;
+    
+    if (!name || !name.trim()) {
+      throw new Error('Recipe name is required');
     }
+
+    if (!category || !category.trim()) {
+      throw new Error('Category is required');
+    }
+
+    // Start transaction
+    await client.query('BEGIN');
+
+    // Process recipe data
+    const recipeData = {
+      name: name.trim(),
+      category: category.trim(),
+      description: req.body.description?.trim() || '',
+      preparation_steps: req.body.preparation_steps?.trim() || '',
+      cooking_method: req.body.cooking_method?.trim() || '',
+      plating_instructions: req.body.plating_instructions?.trim() || '',
+      chefs_notes: req.body.chefs_notes?.trim() || '',
+      selling_price: parseFloat(req.body.selling_price) || 0,
+      monthly_sales: parseInt(req.body.monthly_sales) || 0,
+      overhead: parseFloat(req.body.overhead) || 0,
+      total_cost: parseFloat(req.body.total_cost) || 0,
+      profit_margin: parseFloat(req.body.profit_margin) || 0,
+      monthly_revenue: parseFloat(req.body.monthly_revenue) || 0,
+      monthly_profit: parseFloat(req.body.monthly_profit) || 0,
+      markup_factor: parseFloat(req.body.markup_factor) || 0,
+      print_menu_ready: req.body.print_menu_ready === 'true',
+      qr_menu_ready: req.body.qr_menu_ready === 'true',
+      website_menu_ready: req.body.website_menu_ready === 'true',
+      available_for_delivery: req.body.available_for_delivery === 'true',
+    };
+
+    // Handle image files
+    if (req.files?.image) {
+      recipeData.image_url = `/uploads/${req.files.image[0].filename}`;
+    }
+
+    if (req.files?.delivery_image) {
+      recipeData.delivery_image_url = `/uploads/${req.files.delivery_image[0].filename}`;
+    }
+
+    // Insert recipe
+    const result = await client.query(
+      `INSERT INTO recipes (
+        name, category, description, preparation_steps, 
+        cooking_method, plating_instructions, chefs_notes,
+        selling_price, monthly_sales, overhead, total_cost,
+        profit_margin, monthly_revenue, monthly_profit,
+        markup_factor, print_menu_ready, qr_menu_ready,
+        website_menu_ready, available_for_delivery, 
+        image_url, delivery_image_url
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19,
+        $20, $21)
+      RETURNING *`,
+      [
+        recipeData.name,
+        recipeData.category,
+        recipeData.description,
+        recipeData.preparation_steps,
+        recipeData.cooking_method,
+        recipeData.plating_instructions,
+        recipeData.chefs_notes,
+        recipeData.selling_price,
+        recipeData.monthly_sales,
+        recipeData.overhead,
+        recipeData.total_cost,
+        recipeData.profit_margin,
+        recipeData.monthly_revenue,
+        recipeData.monthly_profit,
+        recipeData.markup_factor,
+        recipeData.print_menu_ready,
+        recipeData.qr_menu_ready,
+        recipeData.website_menu_ready,
+        recipeData.available_for_delivery,
+        recipeData.image_url || null,
+        recipeData.delivery_image_url || null
+      ]
+    );
+
+    // Commit transaction
+    await client.query('COMMIT');
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    // Rollback transaction on error
+    await client.query('ROLLBACK');
+    
+    console.error('Error creating recipe:', error);
+    res.status(500).json({
+      error: 'Failed to save recipe',
+      details: error.message
+    });
+  } finally {
+    client.release();
+  }
 });
 
-app.put('/api/recipes/:id', async (req, res) => {
-    const { id } = req.params;
-
+app.put('/api/recipes/:id', uploadFields, async (req, res) => {
     try {
+        const { id } = req.params;
         console.log('Updating recipe:', id);
-        console.log('Request body:', req.body);
+        console.log('Received data:', req.body);
+        console.log('Received file:', req.file);
 
-        // Input validation
-        if (!req.body.name || !req.body.category) {
-            throw new Error('Name and category are required');
+        // Parse ingredients if it's a string
+        let parsedIngredients = req.body.ingredients;
+        if (typeof req.body.ingredients === 'string') {
+            parsedIngredients = JSON.parse(req.body.ingredients);
         }
 
-        // Validate image data if present
-        if (req.body.delivery_image_url && !req.body.delivery_image_url.startsWith('data:image/')) {
-            throw new Error('Invalid image data format');
-        }
-
-        await pool.query('BEGIN');
-
+        // Start a transaction
+        const client = await pool.connect();
         try {
-            // Check if recipe exists
-            const existingRecipe = await pool.query(
-                'SELECT * FROM recipes WHERE id = $1',
-                [id]
-            );
-
+            // First check if recipe exists
+            const existingRecipe = await client.query('SELECT * FROM recipes WHERE id = $1', [id]);
             if (existingRecipe.rows.length === 0) {
-                await pool.query('ROLLBACK');
+                await client.query('ROLLBACK');
                 return res.status(404).json({ error: 'Recipe not found' });
             }
 
+            const {
+                name,
+                category,
+                description,
+                preparation_steps,
+                cooking_method,
+                plating_instructions,
+                chefs_notes,
+                selling_price,
+                monthly_sales,
+                overhead,
+                total_cost,
+                profit_margin,
+                monthly_revenue,
+                monthly_profit,
+                markup_factor,
+                print_menu_ready,
+                qr_menu_ready,
+                website_menu_ready,
+                available_for_delivery
+            } = req.body;
+
+            // If a new image is uploaded, use its URL, otherwise keep the existing one
+            let imageUrl = req.files.image 
+                ? `http://localhost:${process.env.PORT || 3001}/uploads/${req.files.image[0].filename}`
+                : undefined;  // undefined means don't update the image_url
+
+            let deliveryImageUrl = req.files.delivery_image
+                ? `http://localhost:${process.env.PORT || 3001}/uploads/${req.files.delivery_image[0].filename}`
+                : undefined;  // undefined means don't update the delivery_image_url
+
             // Update recipe
-            const result = await pool.query(
-                `UPDATE recipes 
-                SET 
-                    name = $1,
-                    category = $2,
-                    description = $3,
-                    preparation_steps = $4,
-                    cooking_method = $5,
-                    plating_instructions = $6,
-                    chefs_notes = $7,
-                    selling_price = $8,
-                    monthly_sales = $9,
-                    overhead = $10,
-                    print_menu_ready = $11,
-                    qr_menu_ready = $12,
-                    website_menu_ready = $13,
-                    available_for_delivery = $14,
-                    delivery_image_url = $15,
-                    total_cost = $16,
-                    profit_margin = $17,
-                    monthly_revenue = $18,
-                    monthly_profit = $19,
-                    markup_factor = $20,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = $21
-                RETURNING *`,
-                [
-                    req.body.name,
-                    req.body.category,
-                    req.body.description || '',
-                    req.body.preparation_steps || '',
-                    req.body.cooking_method || '',
-                    req.body.plating_instructions || '',
-                    req.body.chefs_notes || '',
-                    req.body.selling_price || 0,
-                    req.body.monthly_sales || 0,
-                    req.body.overhead || 10,
-                    req.body.print_menu_ready || false,
-                    req.body.qr_menu_ready || false,
-                    req.body.website_menu_ready || false,
-                    req.body.available_for_delivery || false,
-                    req.body.delivery_image_url || '',
-                    req.body.total_cost || 0,
-                    req.body.profit_margin || 0,
-                    req.body.monthly_revenue || 0,
-                    req.body.monthly_profit || 0,
-                    req.body.markup_factor || 0,
-                    id
-                ]
-            );
+            const updateFields = [
+                'name = $1',
+                'category = $2',
+                'description = $3',
+                'preparation_steps = $4',
+                'cooking_method = $5',
+                'plating_instructions = $6',
+                'chefs_notes = $7',
+                'selling_price = $8',
+                'monthly_sales = $9',
+                'overhead = $10',
+                'total_cost = $11',
+                'profit_margin = $12',
+                'monthly_revenue = $13',
+                'monthly_profit = $14',
+                'markup_factor = $15',
+                'print_menu_ready = $16',
+                'qr_menu_ready = $17',
+                'website_menu_ready = $18',
+                'available_for_delivery = $19'
+            ];
 
-            // Update ingredients if provided
-            if (req.body.ingredients && Array.isArray(req.body.ingredients)) {
-                await pool.query(
-                    'DELETE FROM recipe_ingredients WHERE recipe_id = $1',
-                    [id]
-                );
+            const values = [
+                name || '',
+                category || '',
+                description || '',
+                preparation_steps || '',
+                cooking_method || '',
+                plating_instructions || '',
+                chefs_notes || '',
+                parseFloat(selling_price) || 0,
+                parseInt(monthly_sales) || 0,
+                parseFloat(overhead) || 0,
+                parseFloat(total_cost) || 0,
+                parseFloat(profit_margin) || 0,
+                parseFloat(monthly_revenue) || 0,
+                parseFloat(monthly_profit) || 0,
+                parseFloat(markup_factor) || 0,
+                print_menu_ready === 'true',
+                qr_menu_ready === 'true',
+                website_menu_ready === 'true',
+                available_for_delivery === 'true'
+            ];
 
-                for (const ingredient of req.body.ingredients) {
-                    await pool.query(
+            // Add image_url to update if a new image was uploaded
+            if (imageUrl !== undefined) {
+                updateFields.push('image_url = $20');
+                values.push(imageUrl);
+            }
+
+            // Add delivery_image_url to update if a new delivery image was uploaded
+            if (deliveryImageUrl !== undefined) {
+                updateFields.push('delivery_image_url = $21');
+                values.push(deliveryImageUrl);
+            }
+
+            values.push(id); // Add id as the last parameter
+
+            const updateQuery = `
+                UPDATE recipes 
+                SET ${updateFields.join(', ')}
+                WHERE id = $${values.length}
+                RETURNING *
+            `;
+
+            console.log('Update query:', updateQuery);
+            console.log('Update values:', values);
+
+            const result = await client.query(updateQuery, values);
+
+            // Delete existing ingredients
+            await client.query('DELETE FROM recipe_ingredients WHERE recipe_id = $1', [id]);
+
+            // Insert new ingredients
+            if (parsedIngredients && Array.isArray(parsedIngredients)) {
+                for (const ingredient of parsedIngredients) {
+                    await client.query(
                         'INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity) VALUES ($1, $2, $3)',
-                        [id, ingredient.id, ingredient.quantity || 0]
+                        [id, ingredient.id, parseFloat(ingredient.quantity) || 0]
                     );
                 }
             }
 
-            await pool.query('COMMIT');
+            await client.query('COMMIT');
 
-            // Fetch complete recipe with ingredients
-            const completeRecipe = await pool.query(
+            // Fetch complete updated recipe with ingredients
+            const completeRecipe = await client.query(
                 `SELECT r.*, 
                 json_agg(
                     CASE WHEN i.id IS NOT NULL THEN
@@ -408,48 +497,97 @@ app.put('/api/recipes/:id', async (req, res) => {
 
             res.json(finalRecipe);
 
-        } catch (err) {
-            await pool.query('ROLLBACK');
-            throw err;
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
         }
-    } catch (err) {
-        console.error('Error updating recipe:', err);
+    } catch (error) {
+        console.error('Error updating recipe:', error);
         res.status(500).json({ 
             error: 'Failed to update recipe', 
-            details: err.message 
+            message: error.message 
         });
     }
 });
 
 app.delete('/api/recipes/:id', async (req, res) => {
-    const { id } = req.params;
-    
     try {
-        // Start a transaction
-        await pool.query('BEGIN');
-        
-        // Delete recipe ingredients first (due to foreign key constraint)
-        await pool.query('DELETE FROM recipe_ingredients WHERE recipe_id = $1', [id]);
-        
-        // Delete recipe
-        const result = await pool.query('DELETE FROM recipes WHERE id = $1', [id]);
-        
-        if (result.rowCount === 0) {
-            throw new Error('Recipe not found');
+        const { id } = req.params;
+        console.log('Deleting recipe:', id);
+
+        // Start transaction
+        const client = await pool.connect();
+        try {
+            // First check if recipe exists
+            const recipe = await client.query('SELECT * FROM recipes WHERE id = $1', [id]);
+            if (recipe.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Recipe not found' });
+            }
+
+            // Delete associated ingredients first
+            await client.query('DELETE FROM recipe_ingredients WHERE recipe_id = $1', [id]);
+
+            // Delete the recipe
+            const result = await client.query('DELETE FROM recipes WHERE id = $1 RETURNING *', [id]);
+
+            // Delete associated image file if it exists
+            if (recipe.rows[0].image_url) {
+                const imagePath = recipe.rows[0].image_url.split('/uploads/')[1];
+                if (imagePath) {
+                    const fullPath = path.join(__dirname, 'uploads', imagePath);
+                    try {
+                        await fs.promises.unlink(fullPath);
+                        console.log('Deleted image file:', fullPath);
+                    } catch (err) {
+                        console.error('Error deleting image file:', err);
+                        // Continue with deletion even if image removal fails
+                    }
+                }
+            }
+
+            // Delete associated delivery image file if it exists
+            if (recipe.rows[0].delivery_image_url) {
+                const deliveryImagePath = recipe.rows[0].delivery_image_url.split('/uploads/')[1];
+                if (deliveryImagePath) {
+                    const fullPath = path.join(__dirname, 'uploads', deliveryImagePath);
+                    try {
+                        await fs.promises.unlink(fullPath);
+                        console.log('Deleted delivery image file:', fullPath);
+                    } catch (err) {
+                        console.error('Error deleting delivery image file:', err);
+                        // Continue with deletion even if image removal fails
+                    }
+                }
+            }
+
+            await client.query('COMMIT');
+
+            res.json({ success: true, deletedRecipe: result.rows[0] });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
         }
-        
-        // Commit transaction
-        await pool.query('COMMIT');
-        
-        res.json({ success: true });
-    } catch (err) {
-        await pool.query('ROLLBACK');
-        if (err.message === 'Recipe not found') {
-            res.status(404).json({ error: err.message });
-        } else {
-            res.status(500).json({ error: err.message });
-        }
+    } catch (error) {
+        console.error('Error deleting recipe:', error);
+        res.status(500).json({
+            error: 'Failed to delete recipe',
+            details: error.message
+        });
     }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: err.message
+  });
 });
 
 const PORT = process.env.PORT || 3001;

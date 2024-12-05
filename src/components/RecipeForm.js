@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import '../styles/shared.css';
 import '../styles/NewRecipeForm.css';
 
-const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'create' }) => {
+const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'create', initialRecipe }) => {
   const [currentMode, setMode] = useState(mode);
 
   // Initial recipe state structure with standardized field names matching database
@@ -41,38 +41,47 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
 
     // Metadata
     created_at: null,
-    updated_at: null
+    updated_at: null,
+
+    // Image
+    image: null,
+    image_preview: null,
+    image_url: null,
+
+    // Delivery Image
+    delivery_image: null,
+    delivery_image_preview: null,
+    delivery_image_url: null
   };
 
-  const [recipe, setRecipe] = useState(() => {
-    if (editingRecipe) {
-      console.log('Initializing with editing recipe:', editingRecipe);
-      
-      // Convert numeric fields to strings and handle null/undefined values
-      const numericFields = [
-        'selling_price', 'monthly_sales', 'overhead',
-        'total_cost', 'profit_margin', 'monthly_revenue',
-        'monthly_profit', 'markup_factor'
-      ];
-      
-      const processedRecipe = {
-        ...initialRecipeState,
-        ...editingRecipe,
-        ingredients: editingRecipe.ingredients || []
-      };
+  const [recipe, setRecipe] = useState(initialRecipeState);
 
-      // Ensure numeric fields are properly formatted strings
-      numericFields.forEach(field => {
-        const value = editingRecipe[field];
-        processedRecipe[field] = (value !== null && value !== undefined) 
-            ? Number(value).toString()
-            : '0';
-      });
-
-      return processedRecipe;
+  // Initialize recipe state safely
+  useEffect(() => {
+    if (initialRecipe) {
+      setRecipe(prev => ({
+        ...prev,
+        ...initialRecipe,
+        ingredients: Array.isArray(initialRecipe.ingredients) ? initialRecipe.ingredients : [],
+        image: null,
+        image_preview: initialRecipe.image_url || null,
+        image_url: initialRecipe.image_url || null
+      }));
     }
-    return initialRecipeState;
-  });
+  }, [initialRecipe]);
+
+  // Initialize recipe state from editingRecipe if available
+  useEffect(() => {
+    if (editingRecipe) {
+      setRecipe(prev => ({
+        ...prev,
+        ...editingRecipe,
+        image_url: editingRecipe.image_url,
+        image: null,
+        image_preview: null
+      }));
+    }
+  }, [editingRecipe]);
 
   const [error, setError] = useState('');
 
@@ -134,30 +143,10 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     
-    let newValue = type === 'checkbox' ? checked : value;
-
-    // Handle numeric fields
-    const numericFields = [
-      'selling_price', 'monthly_sales', 'overhead',
-      'total_cost', 'profit_margin', 'monthly_revenue',
-      'monthly_profit', 'markup_factor'
-    ];
-
-    if (numericFields.includes(name)) {
-      newValue = value === '' ? '0' : value.replace(/[^\d.-]/g, '');
-      if (isNaN(parseFloat(newValue))) {
-        newValue = '0';
-      }
-    }
-
-    setRecipe(prev => {
-      const updated = {
-        ...prev,
-        [name]: newValue
-      };
-      
-      return updated;
-    });
+    setRecipe(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
   };
 
   const handleMenuToggle = (fieldName) => {
@@ -317,54 +306,213 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     }
   }, [recipe.ingredients, recipe.selling_price, recipe.monthly_sales, recipe.overhead, ingredients]);
 
+  // Handle image upload
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Create a preview URL
+      const previewUrl = URL.createObjectURL(file);
+      setRecipe(prev => ({
+        ...prev,
+        image: file,
+        image_preview: previewUrl
+      }));
+    }
+  };
+
+  // Handle image removal
+  const handleRemoveImage = () => {
+    setRecipe(prev => ({
+      ...prev,
+      image: null,
+      image_preview: null,
+      image_url: null
+    }));
+    
+    // Reset file input
+    const fileInput = document.querySelector('input[type="file"]');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
+
+  // Handle delivery image upload
+  const handleDeliveryImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Create a preview URL
+      const previewUrl = URL.createObjectURL(file);
+      console.log('Created preview URL:', previewUrl);
+      
+      setRecipe(prev => {
+        const updated = {
+          ...prev,
+          delivery_image: file,
+          delivery_image_preview: previewUrl
+        };
+        console.log('Updated recipe state:', updated);
+        return updated;
+      });
+    }
+  };
+
+  // Handle delivery image removal
+  const handleRemoveDeliveryImage = () => {
+    // Revoke old preview URL to prevent memory leaks
+    if (recipe.delivery_image_preview) {
+      URL.revokeObjectURL(recipe.delivery_image_preview);
+    }
+
+    setRecipe(prev => ({
+      ...prev,
+      delivery_image: null,
+      delivery_image_preview: null,
+      delivery_image_url: null
+    }));
+    
+    // Reset file input
+    const fileInput = document.querySelector('input[name="delivery_image"]');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
+
+  // Image upload section JSX
+  const renderImageUpload = () => {
+    const hasImage = recipe.image_preview || recipe.image_url;
+    
+    return (
+      <div className="form-group">
+        <label>Recipe Image</label>
+        <div className="image-upload-container">
+          {hasImage ? (
+            <div className="image-preview-container">
+              <img 
+                src={recipe.image_preview || recipe.image_url} 
+                alt="Recipe preview" 
+                className="image-preview"
+              />
+              <button 
+                type="button" 
+                onClick={handleRemoveImage}
+                className="remove-image-btn"
+              >
+                Remove Image
+              </button>
+            </div>
+          ) : (
+            <div className="file-input-container">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="form-control"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Delivery image upload section JSX
+  const renderDeliveryImageUpload = () => {
+    const hasImage = recipe.delivery_image_preview || recipe.delivery_image_url;
+    
+    return (
+      <div className="form-group">
+        <label>Delivery Image</label>
+        <div className="image-upload-container">
+          {hasImage ? (
+            <div className="image-preview-container">
+              <img 
+                src={recipe.delivery_image_preview || recipe.delivery_image_url} 
+                alt="Delivery preview" 
+                className="image-preview"
+                style={{ maxWidth: '200px', marginTop: '10px' }}
+              />
+              <button 
+                type="button" 
+                onClick={handleRemoveDeliveryImage}
+                className="remove-image-btn"
+              >
+                Remove Image
+              </button>
+            </div>
+          ) : (
+            <div className="file-input-container">
+              <input
+                type="file"
+                name="delivery_image"
+                accept="image/*"
+                onChange={handleDeliveryImageChange}
+                className="form-control"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     
     try {
-      if (!recipe.name || !recipe.category) {
-        setError('Name and category are required');
+      // Validate required fields
+      if (!recipe.name?.trim()) {
+        setError('Recipe name is required');
         return;
       }
 
-      // Ensure delivery packaging is preserved
-      const submissionData = {
-        name: recipe.name.trim(),
-        category: recipe.category.trim(),
-        description: recipe.description?.trim() || '',
-        preparation_steps: recipe.preparation_steps?.trim() || '',
-        cooking_method: recipe.cooking_method?.trim() || '',
-        plating_instructions: recipe.plating_instructions?.trim() || '',
-        chefs_notes: recipe.chefs_notes?.trim() || '',
-        selling_price: parseFloat(recipe.selling_price) || 0,
-        monthly_sales: parseInt(recipe.monthly_sales) || 0,
-        overhead: parseFloat(recipe.overhead) || 10,
-        total_cost: parseFloat(recipe.total_cost) || 0,
-        profit_margin: parseFloat(recipe.profit_margin) || 0,
-        monthly_revenue: parseFloat(recipe.monthly_revenue) || 0,
-        monthly_profit: parseFloat(recipe.monthly_profit) || 0,
-        markup_factor: parseFloat(recipe.markup_factor) || 0,
-        print_menu_ready: recipe.print_menu_ready || false,
-        qr_menu_ready: recipe.qr_menu_ready || false,
-        website_menu_ready: recipe.website_menu_ready || false,
-        available_for_delivery: recipe.available_for_delivery || false,
-        delivery_image_url: recipe.delivery_image_url || '',
-        ingredients: recipe.ingredients.map(ing => ({
-          id: ing.id,
-          quantity: parseFloat(ing.quantity) || 0
-        }))
-      };
-
-      if (editingRecipe?.id) {
-        submissionData.id = editingRecipe.id;
+      if (!recipe.category?.trim()) {
+        setError('Category is required');
+        return;
       }
 
-      console.log('Submitting recipe:', submissionData);
+      const formData = new FormData();
       
-      await onSubmit(submissionData);
+      // Add all recipe fields to formData
+      Object.keys(recipe).forEach(key => {
+        if (key === 'ingredients') {
+          // Ensure ingredients is an array and convert to JSON string
+          const ingredients = Array.isArray(recipe[key]) ? recipe[key] : [];
+          formData.append(key, JSON.stringify(ingredients));
+        } else if (key === 'image' && recipe.image instanceof File) {
+          formData.append('image', recipe.image);
+        } else if (key === 'delivery_image' && recipe.delivery_image instanceof File) {
+          formData.append('delivery_image', recipe.delivery_image);
+        } else if (!['image_preview', 'image_url', 'delivery_image_preview', 'delivery_image_url'].includes(key)) {
+          // For all other fields, ensure we don't send undefined or null values
+          const value = recipe[key];
+          if (value !== null && value !== undefined) {
+            // For boolean values, explicitly convert to string
+            if (typeof value === 'boolean') {
+              formData.append(key, value.toString());
+            } else if (typeof value === 'string') {
+              // For string values, trim and only append if not empty
+              const trimmedValue = value.trim();
+              if (trimmedValue) {
+                formData.append(key, trimmedValue);
+              }
+            } else {
+              formData.append(key, value.toString());
+            }
+          }
+        }
+      });
+
+      // Log formData contents for debugging
+      for (let [key, value] of formData.entries()) {
+        console.log(`FormData: ${key} = ${value}`);
+      }
+
+      await onSubmit(formData);
       
     } catch (error) {
       console.error('Error submitting recipe:', error);
-      setError('Failed to save recipe. Please try again.');
+      setError(error.message || 'Failed to save recipe. Please try again.');
     }
   };
 
@@ -391,71 +539,6 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     return `₹${amount.toFixed(2)}`;
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Image size must be less than 5MB');
-        return;
-      }
-
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        setError('Please upload a valid image file');
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        try {
-          // Compress image if needed
-          const img = new Image();
-          img.src = reader.result;
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            // Calculate new dimensions while maintaining aspect ratio
-            let width = img.width;
-            let height = img.height;
-            const maxDimension = 800;
-            
-            if (width > height && width > maxDimension) {
-              height = (height * maxDimension) / width;
-              width = maxDimension;
-            } else if (height > maxDimension) {
-              width = (width * maxDimension) / height;
-              height = maxDimension;
-            }
-            
-            canvas.width = width;
-            canvas.height = height;
-            
-            // Draw and compress image
-            ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-            
-            setRecipe(prev => ({
-              ...prev,
-              delivery_image_url: compressedDataUrl
-            }));
-          };
-        } catch (error) {
-          console.error('Error processing image:', error);
-          setError('Failed to process image. Please try again.');
-        }
-      };
-      
-      reader.onerror = () => {
-        console.error('Error reading file:', reader.error);
-        setError('Failed to read image file. Please try again.');
-      };
-      
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleReset = () => {
     if (editingRecipe) {
       setRecipe(editingRecipe);
@@ -464,6 +547,111 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     }
     setError('');
   };
+
+  const renderBasicInformation = () => (
+    <div className="form-section basic-info-section">
+      <h3>Basic Information</h3>
+      <div className="basic-info-grid">
+        <input
+          type="text"
+          name="name"
+          value={recipe.name || ''}
+          onChange={handleInputChange}
+          placeholder="Recipe Name"
+          className="form-input"
+          required
+        />
+        <select
+          name="category"
+          value={recipe.category || ''}
+          onChange={handleInputChange}
+          className="form-select"
+        >
+          <option value="">Select Category</option>
+          <option value="Food">Food</option>
+          <option value="Bakery">Bakery</option>
+          <option value="Beverages">Beverages</option>
+        </select>
+        <div className="form-group overhead-group">
+          <label>Overhead Cost</label>
+          <div className="overhead-input-wrapper">
+            <input
+              type="number"
+              name="overhead"
+              value={recipe.overhead || '10'}
+              onChange={handleOverheadChange}
+              min="0"
+              max="20"
+              step="1"
+            />
+            <span className="percentage-symbol">%</span>
+          </div>
+        </div>
+        {renderImageUpload()}
+      </div>
+    </div>
+  );
+
+  const renderMenuAvailability = () => (
+    <div className="form-section menu-tracking-section">
+      <h3>Menu Availability</h3>
+      <div className="menu-tracking-grid">
+        <div className="menu-tracking-item">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              name="print_menu_ready"
+              checked={recipe.print_menu_ready}
+              onChange={() => handleMenuToggle('print_menu_ready')}
+            />
+            Print Menu
+          </label>
+        </div>
+        <div className="menu-tracking-item">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              name="qr_menu_ready"
+              checked={recipe.qr_menu_ready}
+              onChange={() => handleMenuToggle('qr_menu_ready')}
+            />
+            QR Code Menu
+          </label>
+        </div>
+        <div className="menu-tracking-item">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              name="website_menu_ready"
+              checked={recipe.website_menu_ready}
+              onChange={() => handleMenuToggle('website_menu_ready')}
+            />
+            Website Menu
+          </label>
+        </div>
+        <div className="menu-tracking-item">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              name="available_for_delivery"
+              checked={recipe.available_for_delivery}
+              onChange={() => handleMenuToggle('available_for_delivery')}
+            />
+            Available for Delivery
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderDeliveryImageSection = () => (
+    recipe.available_for_delivery && (
+      <div className="form-section delivery-image-section">
+        <h3>Delivery Image</h3>
+        {renderDeliveryImageUpload()}
+      </div>
+    )
+  );
 
   return (
     <div className="recipe-form-container">
@@ -483,47 +671,9 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
       )}
 
       <form onSubmit={handleSubmit} className="recipe-form">
-        <div className="form-section basic-info-section">
-          <h3>Basic Information</h3>
-          <div className="basic-info-grid">
-            <input
-              type="text"
-              name="name"
-              value={recipe.name || ''}
-              onChange={handleInputChange}
-              placeholder="Recipe Name"
-              className="form-input"
-              required
-            />
-            <select
-              name="category"
-              value={recipe.category || ''}
-              onChange={handleInputChange}
-              className="form-select"
-            >
-              <option value="">Select Category</option>
-              <option value="Food">Food</option>
-              <option value="Bakery">Bakery</option>
-              <option value="Beverages">Beverages</option>
-            </select>
-            <div className="form-group overhead-group">
-              <label>Overhead Cost</label>
-              <div className="overhead-input-wrapper">
-                <input
-                  type="number"
-                  name="overhead"
-                  value={recipe.overhead || '10'}
-                  onChange={handleOverheadChange}
-                  min="0"
-                  max="20"
-                  step="1"
-                />
-                <span className="percentage-symbol">%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
+        {renderBasicInformation()}
+        {renderMenuAvailability()}
+        {renderDeliveryImageSection()}
         <div className="form-section sop-section">
           <h3>Standard Operating Procedure</h3>
           <div className="sop-container">
@@ -625,102 +775,6 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
             ))}
           </div>
         </div>
-
-        <div className="form-section menu-tracking-section">
-          <h3>Menu Availability</h3>
-          <div className="menu-tracking-grid">
-            <div className="menu-tracking-item">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="print_menu_ready"
-                  checked={recipe.print_menu_ready}
-                  onChange={() => handleMenuToggle('print_menu_ready')}
-                />
-                Print Menu
-              </label>
-            </div>
-            <div className="menu-tracking-item">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="qr_menu_ready"
-                  checked={recipe.qr_menu_ready}
-                  onChange={() => handleMenuToggle('qr_menu_ready')}
-                />
-                QR Code Menu
-              </label>
-            </div>
-            <div className="menu-tracking-item">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="website_menu_ready"
-                  checked={recipe.website_menu_ready}
-                  onChange={() => handleMenuToggle('website_menu_ready')}
-                />
-                Website Menu
-              </label>
-            </div>
-            <div className="menu-tracking-item">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="available_for_delivery"
-                  checked={recipe.available_for_delivery}
-                  onChange={() => handleMenuToggle('available_for_delivery')}
-                />
-                Available for Delivery
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {recipe.available_for_delivery && (
-          <div className="form-section packaging-section">
-            <h3>Delivery Image</h3>
-            <div className="packaging-container">
-              <div className="packaging-image-container">
-                {recipe.delivery_image_url ? (
-                  <div className="image-preview">
-                    <img 
-                      src={recipe.delivery_image_url} 
-                      alt="Packaging" 
-                      className="packaging-image"
-                    />
-                    <button
-                      type="button"
-                      className="remove-image-btn"
-                      onClick={() => setRecipe(prev => ({
-                        ...prev,
-                        delivery_image_url: ''
-                      }))}
-                    >
-                      Remove Image
-                    </button>
-                  </div>
-                ) : (
-                  <div className="image-upload">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      className="file-input-hidden"
-                      id="packaging-image-input"
-                    />
-                    <button
-                      type="button"
-                      className="upload-btn"
-                      onClick={() => document.getElementById('packaging-image-input').click()}
-                    >
-                      Upload Packaging Image
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="form-section financial-section">
           <h3>Financial Details</h3>

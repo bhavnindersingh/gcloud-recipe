@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import IngredientsManager from './components/IngredientsManager';
 import RecipeForm from './components/RecipeForm';
-import RecipeList from './components/RecipeList';
 import RecipeManager from './components/RecipeManager';
 import Analytics from './components/Analytics';
 import Login from './components/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import * as XLSX from 'xlsx';
+import config from './config/env';
 import './styles/App.css';
 
 const ScrollToTop = () => {
@@ -30,7 +30,6 @@ function App() {
     const saved = sessionStorage.getItem('editingRecipe');
     return saved ? JSON.parse(saved) : null;
   });
-  const [viewingRecipe, setViewingRecipe] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return sessionStorage.getItem('isAuthenticated') === 'true';
   });
@@ -56,11 +55,11 @@ function App() {
         navigate('/manager');
       }
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, navigate, editingRecipe]);
 
   const fetchIngredients = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/ingredients');
+      const response = await fetch(`${config.API_URL}/ingredients`);
       if (response.ok) {
         const data = await response.json();
         setIngredients(data);
@@ -72,70 +71,53 @@ function App() {
 
   const fetchRecipes = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/recipes');
+      const response = await fetch(`${config.API_URL}/recipes`);
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error('Failed to fetch recipes');
       }
-      const data = await response.json();
-      setRecipes(data);
+      setRecipes(await response.json());
     } catch (error) {
       console.error('Error fetching recipes:', error);
     }
   };
 
-  const handleRecipeSubmit = async (recipe) => {
+  const handleRecipeSubmit = async (formData) => {
     try {
-      // Process recipe data
-      const processedRecipe = {
-        ...recipe,
-        available_for_delivery: recipe.available_for_delivery || false,
-        delivery_image_url: recipe.delivery_image_url || '',
-        ingredients: recipe.ingredients || []
-      };
-      
-      // Determine if this is an update or a new recipe
-      const isUpdate = processedRecipe.id && recipes.some(r => r.id === processedRecipe.id);
-      
-      let response;
-      if (isUpdate) {
-        // Update existing recipe
-        response = await fetch(`http://localhost:3001/api/recipes/${processedRecipe.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(processedRecipe)
-        });
-      } else {
-        // Create new recipe
-        response = await fetch('http://localhost:3001/api/recipes', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(processedRecipe)
-        });
-      }
+      const recipeId = editingRecipe?.id;
+      const isUpdate = !!recipeId;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save recipe');
-      }
+      const url = isUpdate 
+        ? `${config.API_URL}/recipes/${recipeId}`
+        : `${config.API_URL}/recipes`;
 
-      const savedRecipe = await response.json();
+      console.log('Submitting to:', url, 'Method:', isUpdate ? 'PUT' : 'POST');
 
-      // Update local state
-      setRecipes(prevRecipes => {
-        if (isUpdate) {
-          return prevRecipes.map(r => r.id === savedRecipe.id ? savedRecipe : r);
-        } else {
-          return [...prevRecipes, savedRecipe];
-        }
+      const response = await fetch(url, {
+        method: isUpdate ? 'PUT' : 'POST',
+        body: formData
       });
 
-      // Reset editing state and clear from session storage
+      const responseText = await response.text();
+      console.log('Server response text:', responseText);
+
+      if (!response.ok) {
+        throw new Error(`Failed to ${isUpdate ? 'update' : 'save'} recipe: ${responseText}`);
+      }
+
+      const savedRecipe = JSON.parse(responseText);
+      console.log('Recipe saved:', savedRecipe);
+
+      // Update recipes list safely
+      setRecipes(prevRecipes => {
+        if (!prevRecipes) return [savedRecipe];
+        
+        if (isUpdate) {
+          return prevRecipes.map(r => r.id === savedRecipe.id ? savedRecipe : r);
+        }
+        return [...prevRecipes, savedRecipe];
+      });
+
       setEditingRecipe(null);
-      sessionStorage.removeItem('editingRecipe');
       
       // Navigate back to recipe manager
       navigate('/manager');
@@ -146,166 +128,38 @@ function App() {
     }
   };
 
-  const handleEditRecipe = (recipe) => {
-    // Process recipe for editing
-    const processedRecipe = {
-      ...recipe,
-      // Convert numeric fields to strings
-      selling_price: recipe.selling_price?.toString() || '0',
-      monthly_sales: recipe.monthly_sales?.toString() || '0',
-      overhead: recipe.overhead?.toString() || '10',
-      total_cost: recipe.total_cost?.toString() || '0',
-      profit_margin: recipe.profit_margin?.toString() || '0',
-      monthly_revenue: recipe.monthly_revenue?.toString() || '0',
-      monthly_profit: recipe.monthly_profit?.toString() || '0',
-      markup_factor: recipe.markup_factor?.toString() || '0',
-      // Ensure other fields have proper defaults
-      available_for_delivery: recipe.available_for_delivery || false,
-      delivery_image_url: recipe.delivery_image_url || '',
-      ingredients: recipe.ingredients || []
-    };
-    
-    setEditingRecipe(processedRecipe);
-    navigate('/manager/recipe-editor');
-  };
+  const handleDeleteRecipe = async (recipeId) => {
+    try {
+      const response = await fetch(`${config.API_URL}/recipes/${recipeId}`, {
+        method: 'DELETE'
+      });
 
-  const handleCreateRecipe = () => {
-    setEditingRecipe(null);
-    sessionStorage.removeItem('editingRecipe');  // Clear from session storage
-    navigate('/create');
-  };
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.details || 'Failed to delete recipe');
+      }
 
-  const handleDeleteRecipe = (recipeId) => {
-    if (window.confirm('Are you sure you want to delete this recipe?')) {
+      // Update recipes state immediately after successful deletion
       setRecipes(prevRecipes => prevRecipes.filter(recipe => recipe.id !== recipeId));
+      
+      // Show success message
+      // toast.success('Recipe deleted successfully');
+      
+      // Refresh recipes list
+      await fetch(`${config.API_URL}/recipes`);
+    } catch (error) {
+      console.error('Error deleting recipe:', error);
+      // toast.error(error.message || 'Failed to delete recipe');
     }
   };
 
-  const handleCancelEdit = () => {
-    setEditingRecipe(null);
-  };
-
-  const handleViewRecipe = (recipe) => {
-    setViewingRecipe(recipe);
-    navigate('/view');
-  };
-
-  const handleCloseView = () => {
-    setViewingRecipe(null);
-    navigate('/manager');
-  };
-
-  const exportData = () => {
-    const wb = XLSX.utils.book_new();
-    
-    // Export recipes
-    const recipesWS = XLSX.utils.json_to_sheet(recipes);
-    XLSX.utils.book_append_sheet(wb, recipesWS, "Recipes");
-    
-    // Export ingredients
-    const ingredientsWS = XLSX.utils.json_to_sheet(ingredients);
-    XLSX.utils.book_append_sheet(wb, ingredientsWS, "Ingredients");
-    
-    // Save the file
-    XLSX.writeFile(wb, "recipe_calculator_data.xlsx");
-  };
-
-  const importData = (event) => {
-    const file = event.target.files[0];
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      
-      // Import recipes
-      const recipesSheet = workbook.Sheets["Recipes"];
-      if (recipesSheet) {
-        const importedRecipes = XLSX.utils.sheet_to_json(recipesSheet);
-        setRecipes(importedRecipes);
-      }
-      
-      // Import ingredients
-      const ingredientsSheet = workbook.Sheets["Ingredients"];
-      if (ingredientsSheet) {
-        const importedIngredients = XLSX.utils.sheet_to_json(ingredientsSheet);
-        setIngredients(importedIngredients);
-      }
-    };
-    
-    reader.readAsArrayBuffer(file);
-  };
-
-  const importSalesData = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        
-        // Get the first worksheet
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        
-        // Convert to JSON (skips empty rows automatically)
-        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
-        const salesData = new Map();
-
-        // Skip header row and process data
-        rows.slice(1).forEach(row => {
-          if (!row || row.length < 2) return; // Skip empty rows
-          
-          const recipeName = row[0]?.toString().trim();
-          const quantity = parseFloat(row[1]);
-          
-          if (!recipeName || isNaN(quantity)) return;
-          if (/^\d+$/.test(recipeName)) return; // Skip total rows
-          
-          const normalizedName = recipeName.toLowerCase();
-          const currentTotal = salesData.get(normalizedName) || 0;
-          salesData.set(normalizedName, currentTotal + quantity);
-        });
-
-        // Update existing recipes with sales data
-        const updatedRecipes = recipes.map(recipe => {
-          const quarterlySales = salesData.get(recipe.name.toLowerCase().trim()) || recipe.quarterlySales || 0;
-          return {
-            ...recipe,
-            quarterlySales: quarterlySales
-          };
-        });
-
-        setRecipes(updatedRecipes);
-        alert('Sales data imported successfully!');
-
-        // Clear file input
-        event.target.value = '';
-
-      } catch (error) {
-        console.error('Import error:', error);
-        alert('Error importing sales data: ' + error.message);
-      }
-    };
-
-    reader.readAsArrayBuffer(file);
-  };
-
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    sessionStorage.setItem('isAuthenticated', 'true');
-    navigate('/manager');
-  };
-
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     setIsAuthenticated(false);
     sessionStorage.removeItem('isAuthenticated');
     navigate('/login');
-  };
+  }, [navigate]);
 
-  const handleUpdateRecipe = async (recipe) => {
+  const handleUpdateRecipe = useCallback(async (recipe) => {
     try {
       // Prepare the data for the API using correct field names
       const recipeData = {
@@ -337,7 +191,7 @@ function App() {
       };
 
       // Make the API call
-      const response = await fetch(`http://localhost:3001/api/recipes/${recipe.id}`, {
+      const response = await fetch(`${config.API_URL}/recipes/${recipe.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -363,7 +217,82 @@ function App() {
       console.error('Error updating recipe:', error);
       throw error;
     }
-  };
+  }, []);
+
+  const exportData = useCallback(() => {
+    const wb = XLSX.utils.book_new();
+    
+    // Export recipes
+    const recipesWS = XLSX.utils.json_to_sheet(recipes);
+    XLSX.utils.book_append_sheet(wb, recipesWS, "Recipes");
+    
+    // Export ingredients
+    const ingredientsWS = XLSX.utils.json_to_sheet(ingredients);
+    XLSX.utils.book_append_sheet(wb, ingredientsWS, "Ingredients");
+    
+    // Save the file
+    XLSX.writeFile(wb, "recipe_calculator_data.xlsx");
+  }, [recipes, ingredients]);
+
+  const importData = useCallback((event) => {
+    const file = event.target.files[0];
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      
+      // Import recipes
+      const recipesSheet = workbook.Sheets["Recipes"];
+      if (recipesSheet) {
+        const importedRecipes = XLSX.utils.sheet_to_json(recipesSheet);
+        setRecipes(importedRecipes);
+      }
+      
+      // Import ingredients
+      const ingredientsSheet = workbook.Sheets["Ingredients"];
+      if (ingredientsSheet) {
+        const importedIngredients = XLSX.utils.sheet_to_json(ingredientsSheet);
+        setIngredients(importedIngredients);
+      }
+    };
+    
+    reader.readAsArrayBuffer(file);
+  }, []);
+
+  const importSalesData = useCallback((event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const csvData = e.target.result;
+        const rows = csvData.split('\n').slice(1); // Skip header row
+
+        const updatedRecipes = [...recipes];
+        for (let row of rows) {
+          const [recipeName, monthlySales] = row.split(',');
+          const recipe = updatedRecipes.find(r => r.name.trim() === recipeName.trim());
+          
+          if (recipe) {
+            recipe.monthly_sales = parseInt(monthlySales) || 0;
+          }
+        }
+
+        setRecipes(updatedRecipes);
+        event.target.value = '';
+      } catch (error) {
+        console.error('Error processing CSV:', error);
+      }
+    };
+    reader.readAsText(file);
+  }, [recipes]);
+
+  const handleLogin = useCallback(() => {
+    setIsAuthenticated(true);
+    sessionStorage.setItem('isAuthenticated', 'true');
+  }, []);
 
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
@@ -377,10 +306,14 @@ function App() {
           <div className="nav-container">
             <div className="nav-left">
               <img 
-                src={process.env.PUBLIC_URL + '/conscious-cafe-logo.svg'}
+                src="/recipe/conscious-cafe-logo.svg"
                 alt="Conscious Café" 
                 className="header-logo"
                 loading="eager"
+                onError={(e) => {
+                  console.error('Logo load error:', e.target.src);
+                  alert(`Failed to load logo from: ${e.target.src}`);
+                }}
               />
               <nav className="nav-tabs">
                 <NavLink to="/manager" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
@@ -392,7 +325,10 @@ function App() {
                 <NavLink 
                   to="/create" 
                   className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}
-                  onClick={handleCreateRecipe}
+                  onClick={() => {
+                    setEditingRecipe(null);
+                    navigate('/create');
+                  }}
                 >
                   Create Recipe
                 </NavLink>
@@ -406,7 +342,15 @@ function App() {
             </div>
             <div className="nav-actions">
               <button className="icon-btn" onClick={handleLogout} title="Logout">
-                <img src={process.env.PUBLIC_URL + '/logout-icon.svg'} alt="Logout" className="btn-icon" />
+                <img 
+                  src="/recipe/logout-icon.svg" 
+                  alt="Logout" 
+                  className="btn-icon"
+                  onError={(e) => {
+                    console.error('Logout icon load error:', e.target.src);
+                    alert(`Failed to load logout icon from: ${e.target.src}`);
+                  }}
+                />
               </button>
             </div>
           </div>
@@ -414,21 +358,27 @@ function App() {
 
         <main>
           <Routes>
+            <Route path="/login" element={
+              isAuthenticated ? (
+                <Navigate to="/manager" replace />
+              ) : (
+                <Login onLogin={handleLogin} />
+              )
+            } />
+            
             <Route path="/" element={
-              isAuthenticated ? <Navigate to="/manager" /> : <Login onLogin={handleLogin} />
+              isAuthenticated ? <Navigate to="/manager" /> : <Navigate to="/login" />
             } />
             
             <Route path="/manager" element={
               <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <RecipeList 
+                <RecipeManager 
                   recipes={recipes} 
-                  ingredients={ingredients}
-                  onEdit={(recipe) => {
+                  onEditRecipe={(recipe) => {
                     setEditingRecipe(recipe);
                     navigate('/manager/recipe-editor');
                   }}
                   onDeleteRecipe={handleDeleteRecipe}
-                  setRecipes={setRecipes}
                 />
               </ProtectedRoute>
             } />
@@ -438,16 +388,13 @@ function App() {
                 <RecipeForm
                   ingredients={ingredients}
                   editingRecipe={editingRecipe}
-                  onSubmit={async (recipe) => {
-                    await handleUpdateRecipe(recipe);
-                    setEditingRecipe(null);
-                    navigate('/manager');
-                  }}
+                  onSubmit={handleRecipeSubmit}
                   onCancel={() => {
                     setEditingRecipe(null);
                     navigate('/manager');
                   }}
                   mode="edit"
+                  initialRecipe={editingRecipe}
                 />
               </ProtectedRoute>
             } />
@@ -456,7 +403,7 @@ function App() {
               path="/ingredients" 
               element={
                 <ProtectedRoute isAuthenticated={isAuthenticated}>
-                  <IngredientsManager ingredients={ingredients} setIngredients={setIngredients} />
+                  <IngredientsManager />
                 </ProtectedRoute>
               } 
             />
@@ -480,21 +427,6 @@ function App() {
             />
 
             <Route 
-              path="/view" 
-              element={
-                <ProtectedRoute isAuthenticated={isAuthenticated}>
-                  <RecipeForm 
-                    ingredients={ingredients}
-                    onSubmit={handleRecipeSubmit}
-                    editingRecipe={viewingRecipe}
-                    onCancel={handleCloseView}
-                    mode="view"
-                  />
-                </ProtectedRoute>
-              } 
-            />
-
-            <Route 
               path="/analytics" 
               element={
                 <ProtectedRoute isAuthenticated={isAuthenticated}>
@@ -502,7 +434,7 @@ function App() {
                 </ProtectedRoute>
               } 
             />
-ca
+
             <Route 
               path="/data" 
               element={
@@ -518,11 +450,11 @@ ca
                         onChange={importData}
                       />
                       <button className="data-btn" onClick={exportData}>
-                        <img src="/export-icon.svg" alt="Export" />
+                        <img src="/recipe/export-icon.svg" alt="Export" />
                         Export App Data
                       </button>
                       <button className="data-btn" onClick={() => fileInputRef.current.click()}>
-                        <img src="/import-icon.svg" alt="Import" />
+                        <img src="/recipe/import-icon.svg" alt="Import" />
                         Import App Data
                       </button>
                       <input
@@ -533,7 +465,7 @@ ca
                         id="sales-file-input"
                       />
                       <button className="data-btn" onClick={() => document.getElementById('sales-file-input').click()}>
-                        <img src="/sales-icon.svg" alt="Sales" />
+                        <img src="/recipe/sales-icon.svg" alt="Sales" />
                         Import QTR Sales
                       </button>
                     </div>
