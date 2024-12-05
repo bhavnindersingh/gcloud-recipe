@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import '../styles/RecipeList.css';
 
 // Define categories here instead of importing
@@ -16,9 +16,9 @@ const RecipeList = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoryState, setSelectedCategory] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
   const [sortBy, setSortBy] = useState('name');
   const [sortOrder, setSortOrder] = useState('asc');
-  const [expandedRecipes, setExpandedRecipes] = useState(new Set());
 
   // Calculate completed and pending counts
   const completedCount = recipes.filter(r => r.ingredients && r.ingredients.length > 0).length;
@@ -31,80 +31,39 @@ const RecipeList = ({
   };
 
   const formatCurrency = (value) => {
-    // Convert to number and handle invalid values
-    const numValue = Number(value);
-    if (!numValue || isNaN(numValue)) return '₹0.00';
-    if (numValue >= 100000) {
-      return `₹${(numValue / 100000).toFixed(2)}L`;
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR'
+    }).format(value);
+  };
+
+  const sortedRecipes = useMemo(() => {
+    let sortableRecipes = [...recipes];
+    if (sortConfig.key !== null) {
+      sortableRecipes.sort((a, b) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) {
+          return sortConfig.direction === 'ascending' ? -1 : 1;
+        }
+        if (a[sortConfig.key] > b[sortConfig.key]) {
+          return sortConfig.direction === 'ascending' ? 1 : -1;
+        }
+        return 0;
+      });
     }
-    return `₹${numValue.toFixed(2)}`;
-  };
+    return sortableRecipes;
+  }, [recipes, sortConfig]);
 
-  const convertToLakhs = (value) => {
-    const numValue = Number(value);
-    if (!numValue || isNaN(numValue)) return '₹0.00L';
-    const inLakhs = numValue / 100000;
-    return `₹${inLakhs.toFixed(2)}L`;
-  };
-
-  const formatProfitMargin = (cost, price) => {
-    const numCost = Number(cost);
-    const numPrice = Number(price);
-    if (!numPrice || isNaN(numPrice) || !numCost || isNaN(numCost)) return '0.0%';
-    const margin = ((numPrice - numCost) / numPrice) * 100;
-    return `${margin.toFixed(1)}%`;
-  };
-
-  const formatInLakhs = (value) => {
-    const numValue = Number(value);
-    if (!numValue || isNaN(numValue)) return '₹0.00L';
-    const inLakhs = numValue / 100000;
-    return `₹${inLakhs.toFixed(2)}L`;
-  };
-
-  const toggleRecipeExpand = (id) => {
-    setExpandedRecipes(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  };
-
-  const calculateMetrics = (recipe) => {
-    // Calculate sum of ingredients cost
-    const ingredientsCost = recipe.ingredients.reduce((total, ing) => {
-      const ingredient = ingredients.find(i => i.id === ing.id);
-      return total + (ingredient ? ingredient.cost * ing.quantity : 0);
-    }, 0);
-
-    // Calculate COGS with overhead
-    const overhead = recipe.overhead || 10; // default 10% if not specified
-    const cogs = ingredientsCost + (ingredientsCost * (overhead / 100));
-    
-    // Other calculations
-    const mrp = recipe.sellingPrice || 0;
-    const sales = recipe.sales || 0;
-    const revenue = sales * mrp;
-
-    return {
-      cogs: formatCurrency(cogs),
-      mrp: formatCurrency(mrp),
-      sales: sales,
-      revenue: formatCurrency(revenue)
-    };
-  };
-
-  const isRecipeComplete = (recipe) => {
-    return recipe.ingredients && recipe.ingredients.length > 0;
+  const handleSort = (key) => {
+    let direction = 'ascending';
+    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
   };
 
   // Filter and sort recipes
   const filteredAndSortedRecipes = useMemo(() => {
-    return recipes
+    return sortedRecipes
       .filter(recipe => {
         if (!recipe) return false;
         const matchesSearch = recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -112,31 +71,7 @@ const RecipeList = ({
         const matchesCategory = selectedCategoryState === 'all' || recipe.category === selectedCategoryState;
         return matchesSearch && matchesCategory;
       })
-      .sort((a, b) => {
-        if (!a || !b) return 0;
-        let compareA, compareB;
-        switch (sortBy) {
-          case 'profitMargin':
-            compareA = ((a.selling_price - a.totalCost) / a.selling_price) * 100;
-            compareB = ((b.selling_price - b.totalCost) / b.selling_price) * 100;
-            break;
-          case 'status':
-            compareA = a.ingredients && a.ingredients.length > 0 ? 1 : 0;
-            compareB = b.ingredients && b.ingredients.length > 0 ? 1 : 0;
-            break;
-          case 'quarterlySales':
-            compareA = parseFloat(a.monthly_sales || 0);
-            compareB = parseFloat(b.monthly_sales || 0);
-            break;
-          default:
-            compareA = a.name.toLowerCase();
-            compareB = b.name.toLowerCase();
-        }
-        return sortOrder === 'asc' 
-          ? compareA > compareB ? 1 : -1
-          : compareA < compareB ? 1 : -1;
-      });
-  }, [recipes, searchTerm, selectedCategoryState, sortBy, sortOrder]);
+  }, [sortedRecipes, searchTerm, selectedCategoryState]);
 
   // Pagination
   const totalPages = Math.ceil(filteredAndSortedRecipes.length / ITEMS_PER_PAGE);
@@ -145,18 +80,8 @@ const RecipeList = ({
     currentPage * ITEMS_PER_PAGE
   );
 
-  const handleSort = (newSortBy) => {
-    if (sortBy === newSortBy) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(newSortBy);
-      setSortOrder('asc');
-    }
-  };
-
   const handlePageChange = (page) => {
     setCurrentPage(page);
-    setExpandedRecipes(new Set());
   };
 
   if (!recipes || recipes.length === 0) {
@@ -214,8 +139,8 @@ const RecipeList = ({
               className="search-input"
             />
             <div className="recipe-counts">
-              <span>✓ {completedCount}</span>
-              <span>⚠️ {pendingCount}</span>
+              <span role="img" aria-label="completed">✓ {completedCount}</span>
+              <span role="img" aria-label="pending">⚠️ {pendingCount}</span>
             </div>
           </div>
 
@@ -257,71 +182,55 @@ const RecipeList = ({
         </div>
 
         <div className="recipe-list">
-          {paginatedRecipes.map(recipe => {
-            if (!recipe) return null;
-            const metrics = calculateMetrics(recipe);
-            const isExpanded = expandedRecipes.has(recipe.id);
-            
-            return (
-              <div className="recipe-card" key={recipe.id}>
-                <div className="recipe-category">{recipe.category}</div>
-                <div className="recipe-header">
-                  <h3 className="recipe-title">{recipe.name}</h3>
-                </div>
-
-                {/* Status Indicator - Mid Right */}
-                {isRecipeComplete(recipe) && (
-                  <div className="status-indicator">✓</div>
-                )}
-
-                {/* Multiplying Factor - Center */}
-                <div className={`multiplier ${metrics.isGoodFactor ? 'good' : 'bad'}`}>
-                  {metrics.multiplyingFactor}x
-                </div>
-
-                <div className="recipe-actions">
-                  <button 
-                    className="action-button edit"
-                    onClick={() => {
-                      console.log('Editing recipe from list:', recipe); // Debug log
-                      onEdit(recipe);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    className="action-button delete"
-                    onClick={() => handleDeleteRecipe(recipe.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-
-                {isExpanded && (
-                  <div className="expanded-metrics">
-                    <div className="metrics-grid">
-                      <div className="metric">
-                        <span className="metric-label">COGS</span>
-                        <span className="metric-value">{metrics.cogs}</span>
-                      </div>
-                      <div className="metric">
-                        <span className="metric-label">MRP</span>
-                        <span className="metric-value">{metrics.mrp}</span>
-                      </div>
-                      <div className="metric">
-                        <span className="metric-label">Sales</span>
-                        <span className="metric-value">{metrics.sales}</span>
-                      </div>
-                      <div className="metric">
-                        <span className="metric-label">Revenue</span>
-                        <span className="metric-value">{metrics.revenue}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          <table>
+            <thead>
+              <tr>
+                <th onClick={() => handleSort('name')}>Recipe Name</th>
+                <th onClick={() => handleSort('category')}>Category</th>
+                <th onClick={() => handleSort('selling_price')}>Selling Price</th>
+                <th onClick={() => handleSort('monthly_sales')}>Monthly Sales</th>
+                <th onClick={() => handleSort('total_cost')}>Total Cost</th>
+                <th onClick={() => handleSort('profit_margin')}>Profit Margin</th>
+                <th onClick={() => handleSort('monthly_revenue')}>Monthly Revenue</th>
+                <th onClick={() => handleSort('monthly_profit')}>Monthly Profit</th>
+                <th onClick={() => handleSort('markup_factor')}>Markup Factor</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedRecipes.map(recipe => {
+                if (!recipe) return null;
+                
+                return (
+                  <tr key={recipe.id}>
+                    <td>{recipe.name}</td>
+                    <td>{recipe.category}</td>
+                    <td>₹ {recipe.selling_price}</td>
+                    <td>{recipe.monthly_sales}</td>
+                    <td>₹ {recipe.total_cost}</td>
+                    <td>{recipe.profit_margin}%</td>
+                    <td>₹ {recipe.monthly_revenue}</td>
+                    <td>₹ {recipe.monthly_profit}</td>
+                    <td>{recipe.markup_factor}x</td>
+                    <td>
+                      <button 
+                        className="action-button edit"
+                        onClick={() => onEdit(recipe)}
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        className="action-button delete"
+                        onClick={() => handleDeleteRecipe(recipe.id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
         
         {totalPages > 1 && (

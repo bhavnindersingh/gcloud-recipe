@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { INGREDIENT_CATEGORIES } from '../constants/ingredientCategories';
+import config from '../config/env';
 import '../styles/shared.css';
 import '../styles/IngredientsManager.css';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = config.API_URL;
 
-const IngredientsManager = ({ ingredients, setIngredients }) => {
+const IngredientsManager = () => {
   const fileInputRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [ingredients, setIngredients] = useState([]);
   const [newIngredient, setNewIngredient] = useState({
     name: '',
     unit: '',
@@ -19,91 +21,28 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
 
   // Fetch ingredients on component mount
   useEffect(() => {
-    fetchIngredients();
-  }, []);
-
-  const fetchIngredients = async () => {
-    try {
-      console.log('Fetching ingredients from:', `${API_URL}/ingredients`);
-      const response = await fetch(`${API_URL}/ingredients`);
-      if (!response.ok) throw new Error('Failed to fetch ingredients');
-      const data = await response.json();
-      console.log('Raw data from server:', data);
-      
-      // Ensure all ingredients have properly formatted costs
-      const formattedData = data.map(ingredient => {
-        // Safely parse the cost value
-        let cost = 0;
-        try {
-          if (ingredient.cost === null || ingredient.cost === undefined) {
-            cost = 0;
-          } else if (typeof ingredient.cost === 'string') {
-            cost = parseFloat(ingredient.cost.replace(/[^\d.-]/g, '')) || 0;
-          } else if (typeof ingredient.cost === 'number') {
-            cost = isNaN(ingredient.cost) ? 0 : ingredient.cost;
-          }
-        } catch (e) {
-          console.error(`Error parsing cost for ${ingredient.name}:`, e);
-          cost = 0;
-        }
-
-        console.log(`Processed ${ingredient.name}:`, {
-          originalCost: ingredient.cost,
-          processedCost: cost
-        });
-
-        return {
+    const fetchIngredientsData = async () => {
+      try {
+        console.log('Fetching ingredients from:', `${API_URL}/ingredients`);
+        const response = await fetch(`${API_URL}/ingredients`);
+        if (!response.ok) throw new Error('Failed to fetch ingredients');
+        const data = await response.json();
+        // Ensure all costs are properly parsed as numbers
+        const processedData = data.map(ingredient => ({
           ...ingredient,
-          cost
-        };
-      });
+          cost: parseFloat(ingredient.cost) || 0
+        }));
+        setIngredients(processedData);
+      } catch (error) {
+        console.error('Error fetching ingredients:', error);
+        setError('Failed to fetch ingredients. Please try again later.');
+      }
+    };
 
-      console.log('Final formatted data:', formattedData);
-      setIngredients(formattedData);
-    } catch (err) {
-      setError('Failed to load ingredients');
-      console.error('Error fetching ingredients:', err);
-    }
-  };
+    fetchIngredientsData();
+  }, []); // Run only on mount
 
-  // Filter ingredients based on search term
-  const filteredIngredients = ingredients.filter(ingredient => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      ingredient.name.toLowerCase().includes(searchLower) ||
-      ingredient.category?.toLowerCase().includes(searchLower) ||
-      ingredient.unit.toLowerCase().includes(searchLower)
-    );
-  });
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewIngredient(prev => ({
-      ...prev,
-      [name]: name === 'cost' ? (value === '' ? '' : parseFloat(value) || 0) : value
-    }));
-    setError('');
-  };
-
-  const validateIngredient = () => {
-    if (!newIngredient.name.trim()) return 'Name is required';
-    if (!newIngredient.unit.trim()) return 'Unit is required';
-    if (!newIngredient.cost || isNaN(newIngredient.cost) || Number(newIngredient.cost) <= 0) {
-      return 'Cost must be a positive number';
-    }
-    
-    // Check for duplicate ingredient names (case-insensitive)
-    const isDuplicate = ingredients.some(
-      ingredient => ingredient.name.toLowerCase() === newIngredient.name.trim().toLowerCase()
-    );
-    if (isDuplicate) {
-      return 'This ingredient already exists';
-    }
-    
-    return '';
-  };
-
-  const handleSubmit = async (e) => {
+  const handleAddIngredient = async (e) => {
     e.preventDefault();
     const validationError = validateIngredient();
     if (validationError) {
@@ -245,6 +184,43 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
     reader.readAsArrayBuffer(file);
   };
 
+  // Filter ingredients based on search term
+  const filteredIngredients = ingredients.filter(ingredient => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      ingredient.name.toLowerCase().includes(searchLower) ||
+      ingredient.category?.toLowerCase().includes(searchLower) ||
+      ingredient.unit.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewIngredient(prev => ({
+      ...prev,
+      [name]: name === 'cost' ? (value === '' ? '' : parseFloat(value) || 0) : value
+    }));
+    setError('');
+  };
+
+  const validateIngredient = () => {
+    if (!newIngredient.name.trim()) return 'Name is required';
+    if (!newIngredient.unit.trim()) return 'Unit is required';
+    if (!newIngredient.cost || isNaN(newIngredient.cost) || Number(newIngredient.cost) <= 0) {
+      return 'Cost must be a positive number';
+    }
+    
+    // Check for duplicate ingredient names (case-insensitive)
+    const isDuplicate = ingredients.some(
+      ingredient => ingredient.name.toLowerCase() === newIngredient.name.trim().toLowerCase()
+    );
+    if (isDuplicate) {
+      return 'This ingredient already exists';
+    }
+    
+    return '';
+  };
+
   return (
     <div className="ingredients-manager-container">
       <div className="page-title-container">
@@ -268,7 +244,7 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
         </h1>
       </div>
       <div className="ingredients-manager">
-        <form onSubmit={handleSubmit} className="neo-card mb-4">
+        <form onSubmit={handleAddIngredient} className="neo-card mb-4">
           <div className="form-grid">
             <div className="form-group">
               <label className="form-label" htmlFor="name">Name</label>
@@ -387,16 +363,15 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
             </thead>
             <tbody>
               {filteredIngredients.map(ingredient => {
-                // Ensure cost is a valid number
-                const cost = typeof ingredient.cost === 'number' && !isNaN(ingredient.cost) 
-                  ? ingredient.cost 
-                  : 0;
+                // Parse cost value ensuring it's a valid number
+                const cost = parseFloat(ingredient.cost);
+                const displayCost = !isNaN(cost) ? cost : 0;
                     
                 return (
                   <tr key={ingredient.id} className="fade-in">
                     <td>{ingredient.name}</td>
                     <td>{ingredient.unit}</td>
-                    <td>₹{cost.toFixed(2)}</td>
+                    <td>₹{displayCost.toFixed(2)}</td>
                     <td>{ingredient.category || 'Vegetables & Fruits'}</td>
                     <td>
                       <button

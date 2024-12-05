@@ -142,11 +142,6 @@
   padding-right: 2.5rem;
 }
 
-.form-group textarea {
-  min-height: 100px;
-  line-height: 1.6;
-}
-
 .form-group.overhead-group {
   grid-column: 1 / -1;
   display: flex;
@@ -252,38 +247,6 @@
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   transform: translateY(-2px);
-}
-
-.sop-content textarea {
-  background: transparent;
-  border: none;
-  width: 100%;
-  height: 100%;
-  min-height: 200px;
-  resize: vertical;
-  font-size: 1rem;
-  line-height: 1.8;
-  color: #1e293b;
-  padding: 0;
-}
-
-.sop-content textarea:focus {
-  outline: none;
-}
-
-.sop-content textarea::placeholder {
-  color: #94a3b8;
-}
-
-.form-section.sop-section h3 {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  color: #1e293b;
-  font-size: 1.6rem;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid rgba(59, 130, 246, 0.2);
 }
 
 /* Ingredients Section */
@@ -643,6 +606,43 @@
   font-size: 14px;
 }
 
+.alert {
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.alert-danger {
+  color: #721c24;
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
+}
+
+label[for]:after {
+  content: attr(for);
+}
+
+label[for]:after {
+  content: '';
+}
+
+label[for] + input[required]:after,
+label[for] + select[required]:after {
+  content: ' *';
+  color: #dc3545;
+}
+
+/* Form validation visual feedback */
+.form-control:invalid {
+  border-color: #dc3545;
+}
+
+.form-control:invalid:focus {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+
 /* Delivery Image Section */
 .delivery-image-section {
   transition: all 0.3s ease-in-out;
@@ -658,4 +658,45 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Calculated Metrics Section */
+.calculated-metrics {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.calculated-metrics h4 {
+  margin: 0 0 15px 0;
+  color: #495057;
+}
+
+.metric-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.metric-item:last-child {
+  border-bottom: none;
+}
+
+.metric-item label {
+  font-weight: 600;
+  color: #495057;
+}
+
+.metric-item .value {
+  font-family: monospace;
+  font-size: 1.1em;
+  color: #212529;
 }

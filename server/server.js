@@ -8,6 +8,12 @@ require('dotenv').config();
 
 const app = express();
 
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 // Configure CORS with specific options
 const corsOptions = {
   origin: ['http://localhost:3002', 'http://localhost:3000'],
@@ -19,18 +25,28 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Serve uploaded files statically
+app.use('/uploads', express.static(uploadsDir));
+
 // Configure multer for multiple file uploads
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, path.join(__dirname, 'uploads'));
-    },
-    filename: function (req, file, cb) {
-      // Create unique filename with timestamp
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      cb(null, uniqueSuffix + path.extname(file.originalname));
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    // Ensure directory exists before saving
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
     }
-  }),
+    cb(null, uploadsDir);
+  },
+  filename: function (req, file, cb) {
+    // Create unique filename with timestamp and sanitized original name
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, uniqueSuffix + ext);
+  }
+});
+
+const upload = multer({
+  storage: storage,
   fileFilter: function (req, file, cb) {
     // Accept only image files
     if (file.mimetype.startsWith('image/')) {
@@ -49,9 +65,6 @@ const uploadFields = upload.fields([
   { name: 'image', maxCount: 1 },
   { name: 'delivery_image', maxCount: 1 }
 ]);
-
-// Serve uploaded files statically
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Database configuration
 const pool = new Pool({
@@ -78,6 +91,19 @@ pool.connect((err, client, done) => {
     });
   }
 });
+
+// Create ingredients table if it doesn't exist
+pool.query(`
+  CREATE TABLE IF NOT EXISTS ingredients (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    unit VARCHAR(50) NOT NULL,
+    cost DECIMAL(10,2) NOT NULL,
+    category VARCHAR(100)
+  );
+`)
+.then(() => console.log('Ingredients table created or already exists'))
+.catch(err => console.error('Error creating ingredients table:', err));
 
 // Run migration for image_url column
 pool.query('ALTER TABLE recipes ADD COLUMN IF NOT EXISTS image_url TEXT;')
@@ -119,6 +145,63 @@ app.post('/api/migrate', async (req, res) => {
         console.error('Migration error:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+// Ingredients routes
+app.get('/api/ingredients', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM ingredients ORDER BY name');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching ingredients:', err);
+    res.status(500).json({ error: 'Failed to fetch ingredients' });
+  }
+});
+
+app.post('/api/ingredients', async (req, res) => {
+  try {
+    const { name, unit, cost, category } = req.body;
+    const result = await pool.query(
+      'INSERT INTO ingredients (name, unit, cost, category) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, unit, cost, category]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating ingredient:', err);
+    res.status(500).json({ error: 'Failed to create ingredient' });
+  }
+});
+
+app.put('/api/ingredients/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, unit, cost, category } = req.body;
+    const result = await pool.query(
+      'UPDATE ingredients SET name = $1, unit = $2, cost = $3, category = $4 WHERE id = $5 RETURNING *',
+      [name, unit, cost, category, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Ingredient not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating ingredient:', err);
+    res.status(500).json({ error: 'Failed to update ingredient' });
+  }
+});
+
+app.delete('/api/ingredients/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query('DELETE FROM ingredients WHERE id = $1 RETURNING *', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Ingredient not found' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting ingredient:', err);
+    res.status(500).json({ error: 'Failed to delete ingredient' });
+  }
 });
 
 // Ingredient routes
@@ -225,7 +308,7 @@ app.post('/api/recipes', uploadFields, async (req, res) => {
   
   try {
     // Validate required fields
-    const { name, category } = req.body;
+    const { name, category, ingredients: ingredientsJson } = req.body;
     
     if (!name || !name.trim()) {
       throw new Error('Recipe name is required');
@@ -233,6 +316,15 @@ app.post('/api/recipes', uploadFields, async (req, res) => {
 
     if (!category || !category.trim()) {
       throw new Error('Category is required');
+    }
+
+    // Parse ingredients array
+    let ingredients = [];
+    try {
+      ingredients = JSON.parse(ingredientsJson || '[]');
+    } catch (e) {
+      console.error('Error parsing ingredients:', e);
+      ingredients = [];
     }
 
     // Start transaction
@@ -263,11 +355,15 @@ app.post('/api/recipes', uploadFields, async (req, res) => {
 
     // Handle image files
     if (req.files?.image) {
-      recipeData.image_url = `/uploads/${req.files.image[0].filename}`;
+      const imagePath = req.files.image[0].filename;
+      recipeData.image_url = `/uploads/${imagePath}`;
+      console.log('Saved image:', imagePath);
     }
 
     if (req.files?.delivery_image) {
-      recipeData.delivery_image_url = `/uploads/${req.files.delivery_image[0].filename}`;
+      const deliveryImagePath = req.files.delivery_image[0].filename;
+      recipeData.delivery_image_url = `/uploads/${deliveryImagePath}`;
+      console.log('Saved delivery image:', deliveryImagePath);
     }
 
     // Insert recipe
@@ -309,18 +405,52 @@ app.post('/api/recipes', uploadFields, async (req, res) => {
       ]
     );
 
+    const recipeId = result.rows[0].id;
+
+    // Insert recipe ingredients
+    if (ingredients && ingredients.length > 0) {
+      const ingredientValues = ingredients.map(ing => 
+        `(${recipeId}, ${ing.id}, ${parseFloat(ing.quantity)})`
+      ).join(',');
+
+      await client.query(`
+        INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity)
+        VALUES ${ingredientValues}
+      `);
+    }
+
+    // Fetch complete recipe with ingredients
+    const completeRecipe = await client.query(
+      `SELECT r.*, 
+        json_agg(
+          CASE WHEN i.id IS NOT NULL THEN
+            json_build_object(
+              'id', i.id,
+              'name', i.name,
+              'unit', i.unit,
+              'cost', i.cost,
+              'quantity', ri.quantity
+            )
+          ELSE NULL END
+        ) as ingredients
+      FROM recipes r
+      LEFT JOIN recipe_ingredients ri ON r.id = ri.recipe_id
+      LEFT JOIN ingredients i ON ri.ingredient_id = i.id
+      WHERE r.id = $1
+      GROUP BY r.id`,
+      [recipeId]
+    );
+
     // Commit transaction
     await client.query('COMMIT');
     
-    res.json(result.rows[0]);
+    res.json(completeRecipe.rows[0]);
   } catch (error) {
-    // Rollback transaction on error
     await client.query('ROLLBACK');
-    
     console.error('Error creating recipe:', error);
-    res.status(500).json({
-      error: 'Failed to save recipe',
-      details: error.message
+    res.status(500).json({ 
+      error: 'Failed to create recipe', 
+      message: error.message 
     });
   } finally {
     client.release();
