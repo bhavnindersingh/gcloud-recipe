@@ -1,83 +1,61 @@
 import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { INGREDIENT_CATEGORIES } from '../constants/ingredientCategories';
+import config from '../config/env';
 import '../styles/shared.css';
 import '../styles/IngredientsManager.css';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = config.API_URL;
 
-const IngredientsManager = ({ ingredients, setIngredients }) => {
+const IngredientsManager = () => {
   const fileInputRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [ingredients, setIngredients] = useState([]);
   const [newIngredient, setNewIngredient] = useState({
     name: '',
     unit: '',
     cost: '',
     category: 'Vegetables & Fruits'
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState({ message: '', type: '' });
+  const [editingId, setEditingId] = useState(null);
+  const [editingCost, setEditingCost] = useState('');
+
+  const showToast = (message, type = 'success') => {
+    setError({ message, type });
+    setTimeout(() => {
+      setError({ message: '', type: '' });
+    }, 3000);
+  };
 
   // Fetch ingredients on component mount
   useEffect(() => {
-    fetchIngredients();
-  }, []);
+    const fetchIngredientsData = async () => {
+      try {
+        console.log('Fetching ingredients from:', `${API_URL}/ingredients`);
+        const response = await fetch(`${API_URL}/ingredients`);
+        if (!response.ok) throw new Error('Failed to fetch ingredients');
+        const data = await response.json();
+        // Ensure all costs are properly parsed as numbers
+        const processedData = data.map(ingredient => ({
+          ...ingredient,
+          cost: parseFloat(ingredient.cost) || 0
+        }));
+        setIngredients(processedData);
+      } catch (error) {
+        console.error('Error fetching ingredients:', error);
+        setError('Failed to fetch ingredients. Please try again later.');
+      }
+    };
 
-  const fetchIngredients = async () => {
-    try {
-      console.log('Fetching ingredients from:', `${API_URL}/ingredients`);
-      const response = await fetch(`${API_URL}/ingredients`);
-      if (!response.ok) throw new Error('Failed to fetch ingredients');
-      const data = await response.json();
-      console.log('Fetched ingredients:', data);
-      setIngredients(data);
-    } catch (err) {
-      setError('Failed to load ingredients');
-      console.error('Error fetching ingredients:', err);
-    }
-  };
+    fetchIngredientsData();
+  }, []); // Run only on mount
 
-  // Filter ingredients based on search term
-  const filteredIngredients = ingredients.filter(ingredient => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      ingredient.name.toLowerCase().includes(searchLower) ||
-      ingredient.category?.toLowerCase().includes(searchLower) ||
-      ingredient.unit.toLowerCase().includes(searchLower)
-    );
-  });
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewIngredient(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    setError('');
-  };
-
-  const validateIngredient = () => {
-    if (!newIngredient.name.trim()) return 'Name is required';
-    if (!newIngredient.unit.trim()) return 'Unit is required';
-    if (!newIngredient.cost || isNaN(newIngredient.cost) || Number(newIngredient.cost) <= 0) {
-      return 'Cost must be a positive number';
-    }
-    
-    // Check for duplicate ingredient names (case-insensitive)
-    const isDuplicate = ingredients.some(
-      ingredient => ingredient.name.toLowerCase() === newIngredient.name.trim().toLowerCase()
-    );
-    if (isDuplicate) {
-      return 'This ingredient already exists';
-    }
-    
-    return '';
-  };
-
-  const handleSubmit = async (e) => {
+  const handleAddIngredient = async (e) => {
     e.preventDefault();
     const validationError = validateIngredient();
     if (validationError) {
-      setError(validationError);
+      setError({ message: validationError, type: 'error' });
       return;
     }
 
@@ -107,24 +85,36 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
         cost: '',
         category: 'Vegetables & Fruits'
       });
+      showToast('Ingredient added successfully', 'success');
     } catch (err) {
-      setError('Failed to save ingredient');
       console.error('Error saving ingredient:', err);
+      showToast('Failed to save ingredient', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
       const response = await fetch(`${API_URL}/ingredients/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
-      if (!response.ok) throw new Error('Failed to delete ingredient');
+      if (!response.ok) {
+        // If ingredient is being used in recipes (foreign key constraint)
+        if (response.status === 500) {
+          showToast('This ingredient is being used in recipes. You can edit its cost instead of deleting.', 'error');
+          return;
+        }
+        throw new Error('Failed to delete ingredient');
+      }
       
       setIngredients(prev => prev.filter(ingredient => ingredient.id !== id));
+      showToast('Ingredient deleted successfully', 'success');
     } catch (err) {
-      setError('Failed to delete ingredient');
       console.error('Error deleting ingredient:', err);
+      showToast(err.message, 'error');
     }
   };
 
@@ -204,19 +194,101 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
 
         // Clear file input
         event.target.value = '';
-        alert('Ingredients imported successfully!');
-
+        showToast('Ingredients imported successfully', 'success');
       } catch (error) {
         console.error('Import error:', error);
-        alert('Error importing ingredients: ' + error.message);
+        showToast('Error importing ingredients: ' + error.message, 'error');
       }
     };
 
     reader.readAsArrayBuffer(file);
   };
 
+  const handleEdit = (ingredient) => {
+    setEditingId(ingredient.id);
+    setEditingCost(ingredient.cost.toString());
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingCost('');
+  };
+
+  const handleSaveEdit = async (ingredient) => {
+    try {
+      const response = await fetch(`${API_URL}/ingredients/${ingredient.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ...ingredient,
+          cost: parseFloat(editingCost)
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update ingredient');
+      }
+
+      setIngredients(prev => prev.map(ing => 
+        ing.id === ingredient.id 
+          ? { ...ing, cost: parseFloat(editingCost) }
+          : ing
+      ));
+      setEditingId(null);
+      setEditingCost('');
+      showToast('Ingredient updated successfully', 'success');
+    } catch (err) {
+      console.error('Error updating ingredient:', err);
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Filter ingredients based on search term
+  const filteredIngredients = ingredients.filter(ingredient => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      ingredient.name.toLowerCase().includes(searchLower) ||
+      ingredient.category?.toLowerCase().includes(searchLower) ||
+      ingredient.unit.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewIngredient(prev => ({
+      ...prev,
+      [name]: name === 'cost' ? (value === '' ? '' : parseFloat(value) || 0) : value
+    }));
+    setError({ message: '', type: '' });
+  };
+
+  const validateIngredient = () => {
+    if (!newIngredient.name.trim()) return 'Name is required';
+    if (!newIngredient.unit.trim()) return 'Unit is required';
+    if (!newIngredient.cost || isNaN(newIngredient.cost) || Number(newIngredient.cost) <= 0) {
+      return 'Cost must be a positive number';
+    }
+    
+    // Check for duplicate ingredient names (case-insensitive)
+    const isDuplicate = ingredients.some(
+      ingredient => ingredient.name.toLowerCase() === newIngredient.name.trim().toLowerCase()
+    );
+    if (isDuplicate) {
+      return 'This ingredient already exists';
+    }
+    
+    return '';
+  };
+
   return (
     <div className="ingredients-manager-container">
+      {error.message && (
+        <div className={`toast-message ${error.type}`}>
+          {error.message}
+        </div>
+      )}
       <div className="page-title-container">
         <h1 className="page-title">
           Ingredient Management
@@ -238,107 +310,89 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
         </h1>
       </div>
       <div className="ingredients-manager">
-        <form onSubmit={handleSubmit} className="neo-card mb-4">
-          <div className="form-grid">
-            <div className="form-group">
-              <label className="form-label" htmlFor="name">Name</label>
-              <input
-                type="text"
-                id="name"
-                name="name"
-                className="form-input"
-                value={newIngredient.name}
-                onChange={handleInputChange}
-                placeholder="Enter ingredient name"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="unit">Unit</label>
-              <select
-                id="unit"
-                name="unit"
-                className="form-input form-select"
-                value={newIngredient.unit}
-                onChange={handleInputChange}
-              >
-                <option value="">Select unit</option>
-                <option value="kg">Kilogram (kg)</option>
-                <option value="g">Gram (g)</option>
-                <option value="l">Liter (l)</option>
-                <option value="ml">Milliliter (ml)</option>
-                <option value="pcs">Pieces (pcs)</option>
-                <option value="dozen">Dozen</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="cost">Cost (₹)</label>
-              <input
-                type="number"
-                id="cost"
-                name="cost"
-                className="form-input"
-                value={newIngredient.cost}
-                onChange={handleInputChange}
-                placeholder="Enter cost per unit"
-                step="0.01"
-                min="0"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="category">Category</label>
-              <select
-                id="category"
-                name="category"
-                className="form-input form-select"
-                value={newIngredient.category}
-                onChange={handleInputChange}
-              >
-                {INGREDIENT_CATEGORIES.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {error && <p className="error-message text-error mb-3">{error}</p>}
-
-          <div className="form-actions">
-            <div className="actions-left">
-              <button type="submit" className="btn btn-success">
-                Add Ingredient
-              </button>
-            </div>
-            <div className="actions-right">
-              <div className="search-wrapper">
+        <form onSubmit={handleAddIngredient}>
+          <div className="add-ingredient-form">
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Name</label>
                 <input
                   type="text"
-                  placeholder="Search ingredients..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="search-input"
+                  name="name"
+                  className="form-input"
+                  value={newIngredient.name}
+                  onChange={handleInputChange}
+                  placeholder="Enter ingredient name"
                 />
-                <button
-                  type="button"
-                  className="btn btn-success search-button"
-                  disabled={!searchTerm}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Unit</label>
+                <select
+                  name="unit"
+                  className="form-input form-select"
+                  value={newIngredient.unit}
+                  onChange={handleInputChange}
                 >
-                  Search
+                  <option value="">Select unit</option>
+                  <option value="kg">Kilogram (kg)</option>
+                  <option value="g">Gram (g)</option>
+                  <option value="l">Liter (l)</option>
+                  <option value="ml">Milliliter (ml)</option>
+                  <option value="pcs">Pieces (pcs)</option>
+                  <option value="dozen">Dozen</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Cost (₹)</label>
+                <input
+                  type="number"
+                  name="cost"
+                  className="form-input"
+                  value={newIngredient.cost}
+                  onChange={handleInputChange}
+                  placeholder="Enter cost per unit"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Category</label>
+                <select
+                  name="category"
+                  className="form-input form-select"
+                  value={newIngredient.category}
+                  onChange={handleInputChange}
+                >
+                  {INGREDIENT_CATEGORIES.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="actions-card">
+            <div className="form-buttons">
+              <div className="form-buttons-left">
+                <button type="submit" className="btn-add">
+                  Add Ingredient
                 </button>
-                {searchTerm && (
+              </div>
+              <div className="form-buttons-right">
+                <div className="search-container">
+                  <input
+                    type="text"
+                    placeholder="Search ingredients..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="search-input"
+                  />
                   <button
                     type="button"
-                    className="search-clear-btn"
-                    onClick={() => setSearchTerm('')}
-                    title="Clear search"
+                    className="btn-search"
+                    disabled={!searchTerm}
                   >
-                    ×
+                    Search
                   </button>
-                )}
+                </div>
               </div>
             </div>
           </div>
@@ -352,23 +406,61 @@ const IngredientsManager = ({ ingredients, setIngredients }) => {
                 <th>Unit</th>
                 <th>Cost (₹)</th>
                 <th>Category</th>
-                <th>Action</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredIngredients.map(ingredient => (
-                <tr key={ingredient.id} className="fade-in">
+                <tr key={ingredient.id}>
                   <td>{ingredient.name}</td>
                   <td>{ingredient.unit}</td>
-                  <td>₹{parseFloat(ingredient.cost || 0).toFixed(2)}</td>
-                  <td>{ingredient.category || 'Vegetables & Fruits'}</td>
                   <td>
-                    <button
-                      onClick={() => handleDelete(ingredient.id)}
-                      className="btn btn-danger"
-                    >
-                      Delete
-                    </button>
+                    {editingId === ingredient.id ? (
+                      <input
+                        type="number"
+                        value={editingCost}
+                        onChange={(e) => setEditingCost(e.target.value)}
+                        className="edit-cost-input"
+                        min="0"
+                        step="0.01"
+                      />
+                    ) : (
+                      `₹${ingredient.cost}`
+                    )}
+                  </td>
+                  <td>{ingredient.category}</td>
+                  <td className="action-buttons">
+                    {editingId === ingredient.id ? (
+                      <>
+                        <button 
+                          className="save-btn"
+                          onClick={() => handleSaveEdit(ingredient)}
+                        >
+                          Save
+                        </button>
+                        <button 
+                          className="cancel-btn"
+                          onClick={handleCancelEdit}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button 
+                          className="edit-btn"
+                          onClick={() => handleEdit(ingredient)}
+                        >
+                          Edit
+                        </button>
+                        <button 
+                          className="delete-btn"
+                          onClick={() => handleDelete(ingredient.id)}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

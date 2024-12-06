@@ -1,16 +1,25 @@
 require('dotenv').config();
-const { Client } = require('pg');
+const { Client, Pool } = require('pg');
+
+// Create a single pool instance
+const pool = new Pool({
+    user: 'postgres',
+    host: 'localhost',
+    database: 'recipe_db',
+    password: 'postgres',
+    port: 5432
+});
 
 async function runDiagnostics() {
     console.log('🔍 Starting Database Diagnostics...\n');
 
     // Step 1: Try connecting to PostgreSQL
     const mainClient = new Client({
-        user: process.env.DB_USER,
-        host: process.env.DB_HOST,
+        user: 'postgres',
+        host: 'localhost',
         database: 'postgres',
-        password: process.env.DB_PASSWORD,
-        port: process.env.DB_PORT,
+        password: 'postgres',
+        port: 5432,
     });
 
     try {
@@ -32,11 +41,11 @@ async function runDiagnostics() {
 
         // Connect to recipe_db
         const recipeClient = new Client({
-            user: process.env.DB_USER,
-            host: process.env.DB_HOST,
+            user: 'postgres',
+            host: 'localhost',
             database: 'recipe_db',
-            password: process.env.DB_PASSWORD,
-            port: process.env.DB_PORT,
+            password: 'postgres',
+            port: 5432,
         });
 
         await recipeClient.connect();
@@ -89,6 +98,56 @@ async function runDiagnostics() {
             await recipeClient.query('ROLLBACK');
         }
 
+        // Step 5: Check and add menu-related columns
+        console.log('\n5️⃣ Checking and adding menu-related columns...');
+        try {
+            // Start a transaction
+            await recipeClient.query('BEGIN');
+
+            // Check if menu-related columns exist
+            const result = await recipeClient.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'recipes' 
+                AND column_name IN (
+                    'print_menu_ready',
+                    'qr_menu_ready',
+                    'website_menu_ready',
+                    'available_for_delivery',
+                    'delivery_image_url'
+                );
+            `);
+
+            console.log('Existing menu columns:', result.rows);
+
+            // Add missing columns if they don't exist
+            await recipeClient.query(`
+                ALTER TABLE recipes
+                ADD COLUMN IF NOT EXISTS print_menu_ready BOOLEAN DEFAULT false,
+                ADD COLUMN IF NOT EXISTS qr_menu_ready BOOLEAN DEFAULT false,
+                ADD COLUMN IF NOT EXISTS website_menu_ready BOOLEAN DEFAULT false,
+                ADD COLUMN IF NOT EXISTS available_for_delivery BOOLEAN DEFAULT false,
+                ADD COLUMN IF NOT EXISTS delivery_image_url TEXT;
+            `);
+
+            // Verify the columns were added
+            const verifyResult = await recipeClient.query(`
+                SELECT column_name, data_type 
+                FROM information_schema.columns 
+                WHERE table_name = 'recipes';
+            `);
+
+            console.log('All columns after update:', verifyResult.rows);
+
+            // Commit the transaction
+            await recipeClient.query('COMMIT');
+            console.log('Schema update completed successfully');
+
+        } catch (err) {
+            await recipeClient.query('ROLLBACK');
+            console.error('Error updating schema:', err);
+        }
+
         await recipeClient.end();
     } catch (err) {
         console.error('❌ Error during diagnostics:', err.message);
@@ -97,4 +156,122 @@ async function runDiagnostics() {
     }
 }
 
+async function diagnoseMenuFields() {
+    try {
+        console.log('🔍 Starting menu fields diagnostic...\n');
+
+        // Test database connection first
+        console.log('Testing database connection...');
+        await pool.query('SELECT NOW()');
+        console.log('✅ Database connection successful\n');
+
+        // 1. Check if menu columns exist
+        console.log('1️⃣ Checking menu columns in schema...');
+        const schemaQuery = `
+            SELECT column_name, data_type, column_default, is_nullable
+            FROM information_schema.columns 
+            WHERE table_name = 'recipes'
+            AND column_name IN (
+                'print_menu_ready',
+                'qr_menu_ready',
+                'website_menu_ready',
+                'available_for_delivery',
+                'delivery_image_url'
+            )
+            ORDER BY ordinal_position;
+        `;
+        
+        const schemaResult = await pool.query(schemaQuery);
+        if (schemaResult.rows.length === 0) {
+            console.log('❌ No menu columns found in schema! Please run add_menu_columns.sql');
+            return;
+        }
+        console.log('Menu columns found in schema:');
+        console.table(schemaResult.rows);
+
+        // 2. Check current values in menu fields
+        console.log('\n2️⃣ Checking current menu field values...');
+        const valuesQuery = `
+            SELECT 
+                id,
+                name,
+                print_menu_ready,
+                qr_menu_ready,
+                website_menu_ready,
+                available_for_delivery,
+                delivery_image_url,
+                created_at,
+                updated_at
+            FROM recipes
+            ORDER BY id;
+        `;
+        
+        const valuesResult = await pool.query(valuesQuery);
+        console.log(`Found ${valuesResult.rows.length} recipes`);
+        console.table(valuesResult.rows);
+
+        // 3. Test menu field update
+        console.log('\n3️⃣ Testing menu field update...');
+        if (valuesResult.rows.length > 0) {
+            const testRecipe = valuesResult.rows[0];
+            console.log('Selected test recipe:', testRecipe.name, `(ID: ${testRecipe.id})`);
+            
+            // Start transaction
+            await pool.query('BEGIN');
+            
+            try {
+                // Flip all boolean values
+                const updateQuery = `
+                    UPDATE recipes
+                    SET 
+                        print_menu_ready = NOT COALESCE(print_menu_ready, false),
+                        qr_menu_ready = NOT COALESCE(qr_menu_ready, false),
+                        website_menu_ready = NOT COALESCE(website_menu_ready, false),
+                        available_for_delivery = NOT COALESCE(available_for_delivery, false),
+                        delivery_image_url = $1
+                    WHERE id = $2
+                    RETURNING *;
+                `;
+                
+                const updateResult = await pool.query(updateQuery, [
+                    'https://test-image.com/updated.jpg',
+                    testRecipe.id
+                ]);
+                
+                if (updateResult.rows.length === 0) {
+                    throw new Error('Recipe not found during update');
+                }
+                
+                console.log('Update successful. New values:');
+                console.table(updateResult.rows);
+
+                // Commit transaction
+                await pool.query('COMMIT');
+                console.log('✅ Transaction committed successfully');
+                
+            } catch (error) {
+                await pool.query('ROLLBACK');
+                console.error('❌ Error during update test:', error.message);
+                throw error;
+            }
+        } else {
+            console.log('❌ No recipes found to test update');
+        }
+
+        console.log('\n✅ Menu fields diagnostic completed successfully');
+
+    } catch (error) {
+        console.error('\n❌ Diagnostic error:', error.message);
+        if (error.code) {
+            console.error('Error code:', error.code);
+        }
+        if (error.detail) {
+            console.error('Error detail:', error.detail);
+        }
+    } finally {
+        await pool.end();
+    }
+}
+
 runDiagnostics();
+diagnoseMenuFields();
