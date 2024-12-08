@@ -458,14 +458,14 @@ const IngredientsManager = () => {
                             onClick={() => handleSaveEdit(ingredient)}
                             title="Save"
                           >
-                            ✔️
+                            <span role="img" aria-label="Save">✔️</span>
                           </button>
                           <button 
                             className="cancel-btn"
                             onClick={handleCancelEdit}
                             title="Cancel"
                           >
-                            ❌
+                            <span role="img" aria-label="Cancel">❌</span>
                           </button>
                         </>
                       ) : (
@@ -475,14 +475,14 @@ const IngredientsManager = () => {
                             onClick={() => handleEdit(ingredient)}
                             title="Edit"
                           >
-                            ✏️
+                            <span role="img" aria-label="Edit">✏️</span>
                           </button>
                           <button 
                             className="delete-btn"
                             onClick={() => handleDelete(ingredient.id)}
                             title="Delete"
                           >
-                            🗑️
+                            <span role="img" aria-label="Delete">🗑️</span>
                           </button>
                         </>
                       )}

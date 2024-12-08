@@ -54,7 +54,7 @@
 .form-section {
   background: #ffffff;
   border-radius: 20px;
-  padding: 2rem;
+  padding: 1rem 2rem;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   transition: all 0.3s ease;
   border: 1px solid rgba(0, 0, 0, 0.05);
@@ -62,13 +62,12 @@
   overflow: hidden;
 }
 
-/* Card Title Styles */
 .form-section h2 {
   color: #1e293b;
   font-size: 1.5rem;
   font-weight: 700;
-  margin-bottom: 2rem;
-  padding-bottom: 1.25rem;
+  margin: 0 0 1.5rem 0;
+  padding-bottom: 1rem;
   position: relative;
   display: flex;
   align-items: center;
@@ -557,7 +556,7 @@
 /* Ingredients Section */
 .ingredients-section {
   grid-area: ingredients;
-  padding: 1.75rem;
+  padding-top: 0.5rem;
 }
 
 .ingredients-header {
@@ -1783,6 +1782,10 @@
   width: 36px;
 }
 
+.remove-ingredient-btn:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
 /* Responsive adjustments */
 @media screen and (max-width: 1024px) {
   .ingredients-card {
@@ -1913,8 +1916,7 @@
 }
 
 .remove-ingredient-btn:hover {
-  background: #fecaca;
-  transform: translateY(-1px);
+  background-color: rgba(239, 68, 68, 0.1);
 }
 
 .remove-ingredient-btn svg {

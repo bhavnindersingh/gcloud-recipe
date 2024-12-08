@@ -149,19 +149,7 @@ gcloud run deploy recipe-calculator --image gcr.io/conscious-cafe/recipe-calcula
 - Production: https://recipe.consciouscafe.in
 - Development: https://recipe-calculator-519715510696.asia-south1.run.app
 
-## 🛠️ API Endpoints
-
-### Ingredients
-- GET /api/ingredients
-- POST /api/ingredients
-- DELETE /api/ingredients/:id
-
-### Recipes
-- GET /api/recipes
-- POST /api/recipes
-- DELETE /api/recipes/:id
-
-## 🚀 Google Cloud Deployment Guide
+##  Google Cloud Deployment Guide
 
 ### Prerequisites
 - Google Cloud Platform Account

@@ -77,15 +77,19 @@ function App() {
       }
       const data = await response.json();
       console.log('Fetched recipes:', data);
-      // Fix the image URLs to use the base URL without /api
+      // Fix the image URLs to use the complete backend URL
       const recipesWithUrls = data.map(recipe => ({
         ...recipe,
-        image_url: recipe.image_url ? recipe.image_url.startsWith('http') 
-          ? recipe.image_url 
-          : `${config.API_URL.replace('/api', '')}/${recipe.image_url}` : null,
-        delivery_image_url: recipe.delivery_image_url ? recipe.delivery_image_url.startsWith('http')
-          ? recipe.delivery_image_url
-          : `${config.API_URL.replace('/api', '')}/${recipe.delivery_image_url}` : null
+        image_url: recipe.image_url ? 
+          recipe.image_url.startsWith('http') 
+            ? recipe.image_url 
+            : `${config.API_URL.replace('/api', '')}/uploads/${recipe.image_url}` 
+          : null,
+        delivery_image_url: recipe.delivery_image_url ? 
+          recipe.delivery_image_url.startsWith('http')
+            ? recipe.delivery_image_url
+            : `${config.API_URL.replace('/api', '')}/uploads/${recipe.delivery_image_url}` 
+          : null
       }));
       console.log('Setting recipes with URLs:', recipesWithUrls);
       setRecipes(recipesWithUrls);
@@ -113,7 +117,7 @@ function App() {
         formData.append('image', recipeData.image);
       } else if (key === 'delivery_image' && recipeData.delivery_image instanceof File) {
         formData.append('delivery_image', recipeData.delivery_image);
-      } else if (recipeData[key] != null && recipeData[key] !== undefined && key !== 'description' && key !== 'delivery_packaging') {
+      } else if (recipeData[key] != null && recipeData[key] !== undefined) {
         formData.append(key, recipeData[key].toString());
       }
     });
@@ -177,10 +181,10 @@ function App() {
       ...recipe,
       image_url: recipe.image_url ? recipe.image_url.startsWith('http') 
         ? recipe.image_url 
-        : `${config.API_URL.replace('/api', '')}/${recipe.image_url}` : null,
+        : `${config.API_URL.replace('/api', '')}/uploads/${recipe.image_url}` : null,
       delivery_image_url: recipe.delivery_image_url ? recipe.delivery_image_url.startsWith('http')
         ? recipe.delivery_image_url
-        : `${config.API_URL.replace('/api', '')}/${recipe.delivery_image_url}` : null
+        : `${config.API_URL.replace('/api', '')}/uploads/${recipe.delivery_image_url}` : null
     });
     navigate('/manager/recipe-editor');
   };
@@ -204,6 +208,32 @@ function App() {
   }, [navigate]);
 
   const handleSalesUpdate = async (updatedRecipes) => {
+    try {
+      // Update each recipe with new sales data
+      for (const recipe of updatedRecipes) {
+        const response = await fetch(`${config.API_URL}/recipes/${recipe.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(recipe)
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to update recipe ${recipe.name}`);
+        }
+      }
+
+      // Refresh recipes list after all updates
+      await fetchRecipes();
+      return true;
+    } catch (error) {
+      console.error('Error updating sales:', error);
+      return false;
+    }
+  };
+
+  const handleSalesUpdate2 = async (updatedRecipes) => {
     try {
       console.log('Starting sales update for recipes:', updatedRecipes);
       
@@ -461,7 +491,7 @@ function App() {
                   <DataManager 
                     recipes={recipes} 
                     ingredients={ingredients}
-                    onSalesUpdate={handleSalesUpdate}
+                    onSalesUpdate={handleSalesUpdate2}
                   />
                 </ProtectedRoute>
               } 

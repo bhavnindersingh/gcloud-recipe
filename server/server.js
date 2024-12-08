@@ -15,8 +15,15 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Configure CORS with specific options
+const allowedOrigins = process.env.ALLOWED_ORIGINS ? [process.env.ALLOWED_ORIGINS] : [
+  'http://localhost:3002', 
+  'http://localhost:3000', 
+  'https://recipe-frontend-786959629970.us-central1.run.app',
+  'https://recipe.consciouscafe.in'
+];
+
 const corsOptions = {
-  origin: ['http://localhost:3002', 'http://localhost:3000'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
@@ -31,31 +38,28 @@ app.use(express.json());
 // Serve uploaded files statically
 app.use('/uploads', express.static(uploadsDir));
 
-// Configure multer for multiple file uploads
+// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // Ensure directory exists before saving
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
     cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
-    // Create unique filename with timestamp and sanitized original name
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    cb(null, uniqueSuffix + ext);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
   }
 });
 
 const upload = multer({
   storage: storage,
   fileFilter: function (req, file, cb) {
-    // Accept only image files
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed!'));
+      cb(new Error('Not an image! Please upload an image.'), false);
     }
   },
   limits: {
@@ -70,13 +74,23 @@ const uploadFields = upload.fields([
 ]);
 
 // Database configuration
-const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'recipe_db',
-  password: 'postgres',
-  port: 5432
-});
+const dbConfig = process.env.DATABASE_URL
+  ? {
+      // Production config (Google Cloud)
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    }
+  : {
+      // Local development config
+      user: 'postgres',
+      password: 'postgres',
+      database: 'recipe_db',
+      host: 'localhost',
+      port: 5432,
+      ssl: false
+    };
+
+const pool = new Pool(dbConfig);
 
 // Test database connection
 pool.connect((err, client, done) => {
@@ -87,7 +101,7 @@ pool.connect((err, client, done) => {
     client.query('SELECT NOW()', (err, result) => {
       done();
       if (err) {
-        console.error('Error executing test query:', err);
+        console.error('Error running test query:', err);
       } else {
         console.log('Database test query successful:', result.rows[0]);
       }
@@ -117,6 +131,38 @@ pool.query('ALTER TABLE recipes ADD COLUMN IF NOT EXISTS image_url TEXT;')
 pool.query('ALTER TABLE recipes ADD COLUMN IF NOT EXISTS delivery_image_url TEXT;')
   .then(() => console.log('Added delivery_image_url column'))
   .catch(err => console.error('Error adding delivery_image_url column:', err));
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Recipe Manager API Server',
+    status: 'running',
+    endpoints: {
+      recipes: '/api/recipes',
+      ingredients: '/api/ingredients'
+    }
+  });
+});
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query('SELECT NOW()');
+    client.release();
+    res.json({
+      status: 'healthy',
+      database: 'connected',
+      timestamp: result.rows[0].now
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'unhealthy',
+      database: 'disconnected',
+      error: err.message
+    });
+  }
+});
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -357,15 +403,22 @@ app.post('/api/recipes', uploadFields, async (req, res) => {
     };
 
     // Handle image files
+    const getImageUrl = (filename) => {
+      if (!filename) return null;
+      return process.env.NODE_ENV === 'production'
+        ? `https://recipe-backend-786959629970.us-central1.run.app/uploads/${filename}`
+        : `/uploads/${filename}`;
+    };
+
     if (req.files?.image) {
       const imagePath = req.files.image[0].filename;
-      recipeData.image_url = `/uploads/${imagePath}`;
+      recipeData.image_url = imagePath; // Store only filename in database
       console.log('Saved image:', imagePath);
     }
 
     if (req.files?.delivery_image) {
       const deliveryImagePath = req.files.delivery_image[0].filename;
-      recipeData.delivery_image_url = `/uploads/${deliveryImagePath}`;
+      recipeData.delivery_image_url = deliveryImagePath; // Store only filename in database
       console.log('Saved delivery image:', deliveryImagePath);
     }
 
@@ -447,7 +500,14 @@ app.post('/api/recipes', uploadFields, async (req, res) => {
     // Commit transaction
     await client.query('COMMIT');
     
-    res.json(completeRecipe.rows[0]);
+    // Transform image URLs in the response
+    const transformedRecipe = {
+      ...completeRecipe.rows[0],
+      image_url: getImageUrl(completeRecipe.rows[0].image_url),
+      delivery_image_url: getImageUrl(completeRecipe.rows[0].delivery_image_url)
+    };
+
+    res.json(transformedRecipe);
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error creating recipe:', error);
@@ -507,11 +567,11 @@ app.put('/api/recipes/:id', uploadFields, async (req, res) => {
 
             // If a new image is uploaded, use its URL, otherwise keep the existing one
             let imageUrl = req.files.image 
-                ? `http://localhost:${process.env.PORT || 3001}/uploads/${req.files.image[0].filename}`
+                ? req.files.image[0].filename
                 : undefined;  // undefined means don't update the image_url
 
             let deliveryImageUrl = req.files.delivery_image
-                ? `http://localhost:${process.env.PORT || 3001}/uploads/${req.files.delivery_image[0].filename}`
+                ? req.files.delivery_image[0].filename
                 : undefined;  // undefined means don't update the delivery_image_url
 
             // Update recipe
@@ -628,7 +688,14 @@ app.put('/api/recipes/:id', uploadFields, async (req, res) => {
                 ingredients: completeRecipe.rows[0].ingredients.filter(i => i !== null)
             };
 
-            res.json(finalRecipe);
+            // Transform image URLs in the response
+            const transformedRecipe = {
+              ...finalRecipe,
+              image_url: getImageUrl(finalRecipe.image_url),
+              delivery_image_url: getImageUrl(finalRecipe.delivery_image_url)
+            };
+
+            res.json(transformedRecipe);
 
         } catch (error) {
             await client.query('ROLLBACK');
@@ -668,7 +735,7 @@ app.delete('/api/recipes/:id', async (req, res) => {
 
             // Delete associated image file if it exists
             if (recipe.rows[0].image_url) {
-                const imagePath = recipe.rows[0].image_url.split('/uploads/')[1];
+                const imagePath = recipe.rows[0].image_url;
                 if (imagePath) {
                     const fullPath = path.join(__dirname, 'uploads', imagePath);
                     try {
@@ -683,7 +750,7 @@ app.delete('/api/recipes/:id', async (req, res) => {
 
             // Delete associated delivery image file if it exists
             if (recipe.rows[0].delivery_image_url) {
-                const deliveryImagePath = recipe.rows[0].delivery_image_url.split('/uploads/')[1];
+                const deliveryImagePath = recipe.rows[0].delivery_image_url;
                 if (deliveryImagePath) {
                     const fullPath = path.join(__dirname, 'uploads', deliveryImagePath);
                     try {
@@ -748,6 +815,50 @@ app.patch('/api/recipes/:id/sales', async (req, res) => {
     }
 });
 
+// Recipe routes
+app.get('/api/recipes', async (req, res) => {
+    try {
+        console.log('Fetching recipes...');
+        const recipes = await pool.query(`
+            SELECT r.*, 
+            json_agg(
+                json_build_object(
+                    'id', i.id,
+                    'name', i.name,
+                    'cost', i.cost,
+                    'unit', i.unit,
+                    'quantity', ri.quantity
+                )
+            ) as ingredients
+            FROM recipes r
+            LEFT JOIN recipe_ingredients ri ON r.id = ri.recipe_id
+            LEFT JOIN ingredients i ON ri.ingredient_id = i.id
+            GROUP BY r.id
+            ORDER BY r.updated_at DESC
+        `);
+        
+        // Transform image URLs in the response
+        const getImageUrl = (filename) => {
+          if (!filename) return null;
+          return process.env.NODE_ENV === 'production'
+            ? `https://recipe-backend-786959629970.us-central1.run.app/uploads/${filename}`
+            : `/uploads/${filename}`;
+        };
+
+        const transformedRecipes = recipes.rows.map(recipe => ({
+            ...recipe,
+            image_url: getImageUrl(recipe.image_url),
+            delivery_image_url: getImageUrl(recipe.delivery_image_url)
+        }));
+        
+        console.log('🔵 Fetched recipes:', transformedRecipes);
+        res.json(transformedRecipes);
+    } catch (err) {
+        console.error('Error fetching recipes:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
@@ -757,7 +868,16 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 3001;
+// Serve static files from the build directory
+app.use(express.static(path.join(__dirname, 'build')));
+
+// Handle any requests that don't match the above
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
+});
+
+// Use port 3001 for local development, 8080 for Google Cloud
+const PORT = process.env.DATABASE_URL ? (process.env.PORT || 8080) : 3001;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });

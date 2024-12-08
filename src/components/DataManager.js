@@ -246,7 +246,7 @@ const DataManager = ({ recipes, onSalesUpdate }) => {
   };
 
   return (
-    <div className="data-management-container">
+    <div className="data-manager">
       <div className="page-title-card">
         <h1 className="page-title">Data Manager</h1>
         <div className="data-buttons">
