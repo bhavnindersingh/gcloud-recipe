@@ -32,21 +32,32 @@ const IngredientsManager = () => {
 
   // Fetch ingredients on component mount
   useEffect(() => {
-    const fetchIngredientsData = async () => {
-      try {
-        console.log('Fetching ingredients from:', `${API_URL}/ingredients`);
-        const response = await fetch(`${API_URL}/ingredients`);
-        if (!response.ok) throw new Error('Failed to fetch ingredients');
-        const data = await response.json();
-        // Ensure all costs are properly parsed as numbers
-        const processedData = data.map(ingredient => ({
-          ...ingredient,
-          cost: parseFloat(ingredient.cost) || 0
-        }));
-        setIngredients(processedData);
-      } catch (error) {
-        console.error('Error fetching ingredients:', error);
-        setError('Failed to fetch ingredients. Please try again later.');
+    const fetchIngredientsData = async (retries = 3) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          console.log('Fetching ingredients attempt:', i + 1);
+          const response = await fetch(`${API_URL}/ingredients`);
+          if (!response.ok) throw new Error('Failed to fetch ingredients');
+          const data = await response.json();
+          // Ensure all costs are properly parsed as numbers
+          const processedData = data.map(ingredient => ({
+            ...ingredient,
+            cost: parseFloat(ingredient.cost) || 0
+          }));
+          setIngredients(processedData);
+          return;
+        } catch (error) {
+          console.error(`Error fetching ingredients (attempt ${i + 1}):`, error.message);
+          if (i === retries - 1) {
+            setError({ 
+              message: 'Failed to fetch ingredients. Please try again later.',
+              type: 'error'
+            });
+          } else {
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+          }
+        }
       }
     };
 
@@ -97,29 +108,37 @@ const IngredientsManager = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    try {
-      const response = await fetch(`${API_URL}/ingredients/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+  const handleDelete = async (id, retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(`${config.API_URL}/ingredients/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
 
-      if (!response.ok) {
-        // If ingredient is being used in recipes (foreign key constraint)
-        if (response.status === 500) {
-          showToast('This ingredient is being used in recipes. You can edit its cost instead of deleting.', 'error');
+        const data = await response.json();
+        
+        if (!response.ok) {
+          // Show the server's error message or a fallback message
+          showToast(data.message || 'Failed to delete ingredient', 'error');
           return;
         }
-        throw new Error('Failed to delete ingredient');
+        
+        // Only update UI if deletion was successful
+        setIngredients(prev => prev.filter(ingredient => ingredient.id !== id));
+        showToast(data.message || 'Ingredient deleted successfully', 'success');
+        return;
+      } catch (err) {
+        console.error(`Error deleting ingredient (attempt ${i + 1}):`, err.message);
+        if (i === retries - 1) {
+          showToast('Network error occurred while deleting ingredient', 'error');
+        } else {
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+        }
       }
-      
-      setIngredients(prev => prev.filter(ingredient => ingredient.id !== id));
-      showToast('Ingredient deleted successfully', 'success');
-    } catch (err) {
-      console.error('Error deleting ingredient:', err);
-      showToast(err.message, 'error');
     }
   };
 
@@ -225,38 +244,46 @@ const IngredientsManager = () => {
     });
   };
 
-  const handleSaveEdit = async (ingredient) => {
-    try {
-      const response = await fetch(`${API_URL}/ingredients/${ingredient.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ...ingredient,
-          cost: parseFloat(editingValues.cost),
-          category: editingValues.category
-        })
-      });
+  const handleSaveEdit = async (ingredient, retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(`${API_URL}/ingredients/${ingredient.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...ingredient,
+            cost: parseFloat(editingValues.cost),
+            category: editingValues.category
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to update ingredient');
+        if (!response.ok) {
+          throw new Error('Failed to update ingredient');
+        }
+
+        setIngredients(prev => prev.map(ing => 
+          ing.id === ingredient.id 
+            ? { ...ing, cost: parseFloat(editingValues.cost), category: editingValues.category }
+            : ing
+        ));
+        setEditingId(null);
+        setEditingValues({
+          cost: '',
+          category: ''
+        });
+        showToast('Ingredient updated successfully', 'success');
+        return;
+      } catch (err) {
+        console.error(`Error updating ingredient (attempt ${i + 1}):`, err.message);
+        if (i === retries - 1) {
+          showToast(err.message, 'error');
+        } else {
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+        }
       }
-
-      setIngredients(prev => prev.map(ing => 
-        ing.id === ingredient.id 
-          ? { ...ing, cost: parseFloat(editingValues.cost), category: editingValues.category }
-          : ing
-      ));
-      setEditingId(null);
-      setEditingValues({
-        cost: '',
-        category: ''
-      });
-      showToast('Ingredient updated successfully', 'success');
-    } catch (err) {
-      console.error('Error updating ingredient:', err);
-      showToast(err.message, 'error');
     }
   };
 

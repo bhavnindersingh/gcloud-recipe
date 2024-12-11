@@ -1,6 +1,25 @@
 // Load environment variables first
 require('dotenv').config();
 
+const winston = require('winston');
+
+// Configure Winston logger
+const logger = winston.createLogger({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    })
+  ]
+});
+
 console.log('Starting server with configuration:', {
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
@@ -23,19 +42,42 @@ const apiRouter = express.Router();
 // Parse allowed origins from environment variable
 let allowedOrigins;
 try {
-  allowedOrigins = JSON.parse(process.env.ALLOWED_ORIGINS || '["http://localhost:3000"]');
-  console.log('Allowed origins:', allowedOrigins);
+  // Default origins for development and production
+  const defaultOrigins = process.env.NODE_ENV === 'production' 
+    ? ['https://recipe.consciouscafe.in']
+    : ['http://localhost:3000'];
+    
+  allowedOrigins = JSON.parse(process.env.ALLOWED_ORIGINS || JSON.stringify(defaultOrigins));
+  logger.info('Configured allowed origins:', { 
+    origins: allowedOrigins,
+    environment: process.env.NODE_ENV 
+  });
 } catch (error) {
-  console.error('Error parsing ALLOWED_ORIGINS:', error);
+  logger.error('Error parsing ALLOWED_ORIGINS:', error);
   allowedOrigins = ['http://localhost:3000'];
 }
 
 // Configure CORS
 const corsOptions = {
   origin: function(origin, callback) {
-    // Allow all origins in development
-    console.log('CORS origin check:', { origin, allowedOrigins });
-    callback(null, true); // Allow all origins
+    logger.info(`Incoming request from origin: ${origin || 'no origin'}`);
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      logger.info('Allowing request with no origin');
+      return callback(null, true);
+    }
+
+    // Log the current allowed origins for debugging
+    logger.info('Current allowed origins:', allowedOrigins);
+
+    if (allowedOrigins.includes(origin)) {
+      logger.info(`Allowing request from origin: ${origin}`);
+      callback(null, true);
+    } else {
+      logger.warn(`Rejected request from unauthorized origin: ${origin}`);
+      callback(new Error(`Origin ${origin} not allowed by CORS. Allowed origins are: ${allowedOrigins.join(', ')}`));
+    }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
@@ -55,16 +97,19 @@ app.use(express.urlencoded({ extended: true }));
 
 // Add request logging middleware
 app.use((req, res, next) => {
-  console.log('\n=== Incoming Request ===');
-  console.log('Method:', req.method);
-  console.log('URL:', req.url);
-  console.log('Original URL:', req.originalUrl);
-  console.log('Path:', req.path);
-  console.log('Headers:', req.headers);
-  console.log('Body:', req.body);
-  console.log('Params:', req.params);
-  console.log('Query:', req.query);
-  console.log('======================\n');
+  const logInfo = {
+    method: req.method,
+    path: req.path,
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  };
+  
+  // Use appropriate log levels
+  if (req.method === 'GET') {
+    logger.debug('Incoming request:', logInfo);
+  } else {
+    logger.info('Request details:', logInfo);
+  }
   next();
 });
 
@@ -73,23 +118,23 @@ app.use('/api', apiRouter);
 
 // Test endpoints AFTER API router
 app.get('/test', (req, res) => {
-  console.log('GET /test hit');
+  logger.info('GET /test hit');
   res.json({ message: 'Test endpoint working' });
 });
 
 app.delete('/test', (req, res) => {
-  console.log('DELETE /test hit');
+  logger.info('DELETE /test hit');
   res.json({ message: 'Test DELETE working' });
 });
 
 // API test endpoints
 apiRouter.get('/test', (req, res) => {
-  console.log('API GET /test hit');
+  logger.info('API GET /test hit');
   res.json({ message: 'API test endpoint working' });
 });
 
 apiRouter.delete('/test', (req, res) => {
-  console.log('API DELETE /test hit');
+  logger.info('API DELETE /test hit');
   res.json({ message: 'API DELETE test working' });
 });
 
@@ -103,9 +148,16 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false
   },
-  connectionTimeoutMillis: 5000,
-  idleTimeoutMillis: 30000,
-  max: 20
+  connectionTimeoutMillis: 8000,
+  idleTimeoutMillis: 10000,
+  max: 5,  // Reduced max connections
+  min: 1,  // Minimum connections
+  keepAlive: true
+});
+
+// Add pool error handler
+pool.on('error', (err, client) => {
+  logger.error('Database pool error:', err.message);
 });
 
 // Test database connection with retries
@@ -113,11 +165,11 @@ async function connectWithRetry(maxRetries = 5) {
   for (let i = 0; i < maxRetries; i++) {
     try {
       const client = await pool.connect();
-      console.log('Successfully connected to PostgreSQL');
+      logger.info('Successfully connected to PostgreSQL');
       client.release();
       return true;
     } catch (err) {
-      console.error(`Failed to connect to PostgreSQL (attempt ${i + 1}/${maxRetries}):`, err.message);
+      logger.error(`Failed to connect to PostgreSQL (attempt ${i + 1}/${maxRetries}):`, err.message);
       if (i < maxRetries - 1) {
         await new Promise(resolve => setTimeout(resolve, 5000));
       }
@@ -130,7 +182,7 @@ async function connectWithRetry(maxRetries = 5) {
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '10485760', 10); // 10MB default
 
 const fileFilter = (req, file, cb) => {
-  console.log('Processing file:', file);
+  logger.info('Processing file:', file);
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
@@ -161,13 +213,13 @@ try {
     keyFilename: path.join(__dirname, 'recipe-storage-sa-key.json'),
     projectId: process.env.GCP_PROJECT_ID
   });
-  console.log('Successfully initialized Google Cloud Storage');
+  logger.info('Successfully initialized Google Cloud Storage');
 } catch (error) {
-  console.error('Error initializing Google Cloud Storage:', error);
+  logger.error('Error initializing Google Cloud Storage:', error);
 }
 
 const bucket = storage.bucket(process.env.STORAGE_BUCKET);
-console.log('Using bucket:', process.env.STORAGE_BUCKET);
+logger.info('Using bucket:', process.env.STORAGE_BUCKET);
 
 // Function to upload file to cloud storage
 async function uploadToCloudStorage(file) {
@@ -191,7 +243,7 @@ async function uploadToCloudStorage(file) {
 
   return new Promise((resolve, reject) => {
     blobStream.on('error', (err) => {
-      console.error('Blob stream error:', err);
+      logger.error('Blob stream error:', err);
       reject(err);
     });
 
@@ -206,11 +258,11 @@ async function uploadToCloudStorage(file) {
 
 // Add endpoint for single image upload
 apiRouter.post('/upload-to-storage', (req, res) => {
-  console.log('Received upload request');
+  logger.info('Received upload request');
   
   singleUpload(req, res, async (err) => {
     if (err) {
-      console.error('Multer error:', err);
+      logger.error('Multer error:', err);
       if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
           return res.status(400).json({
@@ -224,11 +276,11 @@ apiRouter.post('/upload-to-storage', (req, res) => {
 
     try {
       if (!req.file) {
-        console.error('No file in request');
+        logger.error('No file in request');
         return res.status(400).json({ error: 'No file uploaded' });
       }
 
-      console.log('File received:', {
+      logger.info('File received:', {
         fieldname: req.file.fieldname,
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
@@ -236,10 +288,10 @@ apiRouter.post('/upload-to-storage', (req, res) => {
       });
 
       const publicUrl = await uploadToCloudStorage(req.file);
-      console.log('File uploaded successfully:', publicUrl);
+      logger.info('File uploaded successfully:', publicUrl);
       res.status(200).json({ url: publicUrl });
     } catch (error) {
-      console.error('Error processing upload:', error);
+      logger.error('Error processing upload:', error);
       res.status(500).json({ error: 'Failed to process upload: ' + error.message });
     }
   });
@@ -354,7 +406,7 @@ apiRouter.post('/recipes', async (req, res) => {
     res.status(201).json(completeRecipe.rows[0]);
   } catch (err) {
     if (client) await client.query('ROLLBACK');
-    console.error('Error creating recipe:', err);
+    logger.error('Error creating recipe:', err);
     res.status(500).json({ error: 'Failed to create recipe: ' + err.message });
   } finally {
     if (client) client.release();
@@ -386,10 +438,25 @@ apiRouter.get('/recipes', async (req, res) => {
       GROUP BY r.id
       ORDER BY r.name ASC
     `);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching recipes:', error);
-    res.status(500).json({ error: 'Failed to fetch recipes' });
+
+    // Calculate total cost for each recipe
+    const recipesWithCost = result.rows.map(recipe => {
+      if (recipe.ingredients && Array.isArray(recipe.ingredients)) {
+        const totalCost = recipe.ingredients.reduce((sum, ing) => {
+          return sum + (ing.cost * ing.quantity);
+        }, 0);
+        return { ...recipe, total_cost: totalCost };
+      }
+      return recipe;
+    });
+
+    res.json(recipesWithCost);
+  } catch (err) {
+    logger.error('Error fetching recipes:', err);
+    res.status(500).json({ 
+      error: 'Failed to fetch recipes',
+      message: err.message 
+    });
   } finally {
     if (client) client.release();
   }
@@ -398,21 +465,21 @@ apiRouter.get('/recipes', async (req, res) => {
 apiRouter.delete('/recipes/:id', async (req, res) => {
   let client;
   try {
-    console.log('\n=== Delete Recipe Request ===');
-    console.log('Params:', req.params);
-    console.log('Recipe ID:', req.params.id);
-    console.log('URL:', req.url);
-    console.log('Original URL:', req.originalUrl);
-    console.log('Path:', req.path);
-    console.log('Method:', req.method);
-    console.log('Headers:', req.headers);
-    console.log('==========================\n');
+    logger.info('\n=== Delete Recipe Request ===');
+    logger.info('Params:', req.params);
+    logger.info('Recipe ID:', req.params.id);
+    logger.info('URL:', req.url);
+    logger.info('Original URL:', req.originalUrl);
+    logger.info('Path:', req.path);
+    logger.info('Method:', req.method);
+    logger.info('Headers:', req.headers);
+    logger.info('==========================\n');
     
     const recipeId = parseInt(req.params.id, 10);
-    console.log('Parsed recipe ID:', recipeId);
+    logger.info('Parsed recipe ID:', recipeId);
     
     if (isNaN(recipeId)) {
-      console.log('Invalid recipe ID:', req.params.id);
+      logger.error('Invalid recipe ID:', req.params.id);
       return res.status(400).json({ error: 'Invalid recipe ID' });
     }
 
@@ -427,16 +494,16 @@ apiRouter.delete('/recipes/:id', async (req, res) => {
       [recipeId]
     );
 
-    console.log('Query result:', existingRecipe.rows);
+    logger.info('Query result:', existingRecipe.rows);
 
     if (existingRecipe.rows.length === 0) {
       await client.query('ROLLBACK');
-      console.log('Recipe not found:', recipeId);
+      logger.error('Recipe not found:', recipeId);
       return res.status(404).json({ error: 'Recipe not found' });
     }
 
     const recipe = existingRecipe.rows[0];
-    console.log('Found recipe to delete:', recipe);
+    logger.info('Found recipe to delete:', recipe);
 
     try {
       // Delete recipe ingredients first (due to foreign key constraint)
@@ -444,14 +511,14 @@ apiRouter.delete('/recipes/:id', async (req, res) => {
         'DELETE FROM recipe_ingredients WHERE recipe_id = $1',
         [recipeId]
       );
-      console.log('Deleted ingredients:', deleteIngredientsResult.rowCount);
+      logger.info('Deleted ingredients:', deleteIngredientsResult.rowCount);
 
       // Delete the recipe
       const deleteResult = await client.query(
         'DELETE FROM recipes WHERE id = $1 RETURNING id',
         [recipeId]
       );
-      console.log('Delete result:', deleteResult.rowCount);
+      logger.info('Delete result:', deleteResult.rowCount);
 
       if (deleteResult.rowCount === 0) {
         throw new Error('Failed to delete recipe');
@@ -467,14 +534,14 @@ apiRouter.delete('/recipes/:id', async (req, res) => {
           if (!fileName) return;
           
           try {
-            console.log('Attempting to delete image:', fileName);
+            logger.info('Attempting to delete image:', fileName);
             await bucket.file(fileName).delete();
-            console.log('Successfully deleted image:', fileName);
+            logger.info('Successfully deleted image:', fileName);
           } catch (err) {
             if (err.code === 404) {
-              console.log('Image not found in storage:', fileName);
+              logger.error('Image not found in storage:', fileName);
             } else {
-              console.warn(`Warning: Failed to delete image ${fileName}:`, err);
+              logger.warn(`Warning: Failed to delete image ${fileName}:`, err);
             }
           }
         };
@@ -487,11 +554,11 @@ apiRouter.delete('/recipes/:id', async (req, res) => {
         }
 
         await Promise.all(deletePromises);
-        console.log('Image deletion completed');
+        logger.info('Image deletion completed');
       }
 
       await client.query('COMMIT');
-      console.log('Recipe deleted successfully:', recipeId);
+      logger.info('Recipe deleted successfully:', recipeId);
       res.json({ 
         message: 'Recipe deleted successfully',
         recipeId: recipeId
@@ -501,12 +568,12 @@ apiRouter.delete('/recipes/:id', async (req, res) => {
       throw error;
     }
   } catch (error) {
-    console.error('Error deleting recipe:', error);
+    logger.error('Error deleting recipe:', error);
     if (client) {
       try {
         await client.query('ROLLBACK');
       } catch (rollbackError) {
-        console.error('Error rolling back transaction:', rollbackError);
+        logger.error('Error rolling back transaction:', rollbackError);
       }
     }
     res.status(500).json({ 
@@ -527,7 +594,7 @@ apiRouter.get('/ingredients', async (req, res) => {
     const result = await client.query('SELECT * FROM ingredients ORDER BY name');
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching ingredients:', err);
+    logger.error('Error fetching ingredients:', err);
     res.status(500).json({ error: 'Failed to fetch ingredients' });
   } finally {
     if (client) client.release();
@@ -537,15 +604,24 @@ apiRouter.get('/ingredients', async (req, res) => {
 apiRouter.post('/ingredients', async (req, res) => {
   let client;
   try {
-    const { name, cost, unit, supplier } = req.body;
+    const { name, cost, unit, category } = req.body;
+    
+    // Validate required fields
+    if (!name || !cost || !unit) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        message: 'Name, cost, and unit are required.'
+      });
+    }
+
     client = await pool.connect();
     const result = await client.query(
-      'INSERT INTO ingredients (name, cost, unit, supplier) VALUES ($1, $2, $3, $4) RETURNING *',
-      [name, cost, unit, supplier]
+      'INSERT INTO ingredients (name, cost, unit, category) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, cost, unit, category || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('Error creating ingredient:', err);
+    logger.error('Error creating ingredient:', err);
     res.status(500).json({ error: 'Failed to create ingredient' });
   } finally {
     if (client) client.release();
@@ -556,21 +632,59 @@ apiRouter.put('/ingredients/:id', async (req, res) => {
   let client;
   try {
     const { id } = req.params;
-    const { name, cost, unit, supplier } = req.body;
+    const { name, unit, cost, category } = req.body;
     
+    // Validate required fields
+    if (!name || !cost || !unit) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        message: 'Name, cost, and unit are required.'
+      });
+    }
+
     client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Update the ingredient
     const result = await client.query(
-      'UPDATE ingredients SET name = $1, cost = $2, unit = $3, supplier = $4 WHERE id = $5 RETURNING *',
-      [name, cost, unit, supplier, id]
+      'UPDATE ingredients SET name = $1, unit = $2, cost = $3, category = $4 WHERE id = $5 RETURNING *',
+      [name, unit, cost, category || null, id]
     );
     
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Ingredient not found' });
     }
-    
+
+    // Update total cost for all recipes that use this ingredient
+    await client.query(`
+      WITH recipe_costs AS (
+        SELECT 
+          r.id as recipe_id,
+          COALESCE(SUM(ri.quantity * i.cost), 0) as new_total_cost
+        FROM recipes r
+        JOIN recipe_ingredients ri ON r.id = ri.recipe_id
+        JOIN ingredients i ON ri.ingredient_id = i.id
+        GROUP BY r.id
+      )
+      UPDATE recipes r
+      SET total_cost = rc.new_total_cost,
+          updated_at = CURRENT_TIMESTAMP
+      FROM recipe_costs rc
+      WHERE r.id = rc.recipe_id
+    `);
+
+    await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('Error updating ingredient:', err);
+    logger.error('Error updating ingredient:', err);
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        logger.error('Error rolling back transaction:', rollbackError);
+      }
+    }
     res.status(500).json({ error: 'Failed to update ingredient' });
   } finally {
     if (client) client.release();
@@ -582,14 +696,35 @@ apiRouter.delete('/ingredients/:id', async (req, res) => {
   try {
     const { id } = req.params;
     client = await pool.connect();
+
+    // First check if the ingredient is used in any recipes
+    const usageCheck = await client.query(
+      'SELECT COUNT(*) FROM recipe_ingredients WHERE ingredient_id = $1',
+      [id]
+    );
+
+    if (parseInt(usageCheck.rows[0].count) > 0) {
+      return res.status(400).json({ 
+        error: 'Ingredient in use',
+        message: 'This ingredient cannot be deleted as it is being used in one or more recipes'
+      });
+    }
+
     const result = await client.query('DELETE FROM ingredients WHERE id = $1 RETURNING *', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Ingredient not found' });
     }
-    res.json({ message: 'Ingredient deleted successfully' });
+    res.json({ 
+      success: true,
+      message: 'Ingredient deleted successfully',
+      ingredient: result.rows[0]
+    });
   } catch (err) {
-    console.error('Error deleting ingredient:', err);
-    res.status(500).json({ error: 'Failed to delete ingredient' });
+    logger.error('Error deleting ingredient:', err);
+    res.status(500).json({ 
+      error: 'Failed to delete ingredient',
+      message: err.message 
+    });
   } finally {
     if (client) client.release();
   }
@@ -620,7 +755,7 @@ apiRouter.get('/recipes', async (req, res) => {
     `);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching recipes:', err);
+    logger.error('Error fetching recipes:', err);
     res.status(500).json({ error: 'Failed to fetch recipes' });
   } finally {
     if (client) client.release();
@@ -734,117 +869,210 @@ apiRouter.put('/recipes/:id', async (req, res) => {
     res.json(completeRecipe.rows[0]);
   } catch (err) {
     if (client) await client.query('ROLLBACK');
-    console.error('Error updating recipe:', err);
+    logger.error('Error updating recipe:', err);
     res.status(500).json({ error: 'Failed to update recipe' });
   } finally {
     if (client) client.release();
   }
 });
 
-// Sales import endpoint
+// Handle both POST and PATCH methods for sales import
 apiRouter.post('/recipes/sales-import', async (req, res) => {
+  await handleSalesImport(req, res);
+});
+
+apiRouter.patch('/recipes/sales-import', async (req, res) => {
+  await handleSalesImport(req, res);
+});
+
+// Shared handler function for sales import
+async function handleSalesImport(req, res) {
   let client;
   try {
-    client = await pool.connect();
     const { recipes: salesData } = req.body;
+    logger.info('Received sales import request:', { 
+      salesDataLength: salesData?.length,
+      timestamp: new Date().toISOString()
+    });
     
     if (!Array.isArray(salesData)) {
-      return res.status(400).json({ error: 'Invalid data format. Expected an array of recipes.' });
+      logger.error('Invalid sales data format:', { received: typeof salesData });
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid data format. Expected an array of recipes with name and sales.'
+      });
     }
 
-    const results = {
-      updated: [],
-      created: [],
-      failed: []
-    };
-
+    client = await pool.connect();
     await client.query('BEGIN');
 
-    for (const item of salesData) {
+    const updatedRecipes = [];
+    const createdRecipes = [];
+    const failedRecipes = [];
+    const processedNames = new Set(); // Track processed recipes to avoid duplicates
+
+    for (const sale of salesData) {
+      const { name, sales } = sale;
+      
+      // Skip empty or invalid entries
+      if (!name || typeof sales !== 'number') {
+        logger.warn('Skipping invalid entry:', { sale });
+        failedRecipes.push({ 
+          name: name || 'Unknown',
+          error: 'Invalid data format. Name and sales quantity required.'
+        });
+        continue;
+      }
+
+      // Skip duplicates
+      if (processedNames.has(name.toLowerCase())) {
+        logger.warn('Skipping duplicate recipe:', { name });
+        failedRecipes.push({ 
+          name,
+          error: 'Duplicate recipe name in import file.'
+        });
+        continue;
+      }
+
+      processedNames.add(name.toLowerCase());
+
       try {
-        // Check if recipe exists
-        let recipe = await client.query(
-          'SELECT id, name FROM recipes WHERE LOWER(name) = LOWER($1)',
-          [item.name]
+        // Clean the recipe name
+        const cleanName = name.trim();
+        
+        // First try to update existing recipe
+        const updateResult = await client.query(
+          `UPDATE recipes 
+           SET 
+             sales = $1,
+             updated_at = CURRENT_TIMESTAMP
+           WHERE LOWER(name) = LOWER($2)
+           RETURNING id, name, sales`,
+          [sales, cleanName]
         );
 
-        if (recipe.rows.length === 0) {
-          // Create new recipe if it doesn't exist
-          const newRecipe = await client.query(
-            'INSERT INTO recipes (name, category, sales) VALUES ($1, $2, $3) RETURNING id, name',
-            [item.name, 'Uncategorized', item.sales]
-          );
-          results.created.push({
-            name: item.name,
-            id: newRecipe.rows[0].id,
-            sales: item.sales
+        if (updateResult.rows.length > 0) {
+          updatedRecipes.push(updateResult.rows[0]);
+          logger.info(`Updated sales for recipe: ${cleanName}`, { 
+            id: updateResult.rows[0].id,
+            sales 
           });
         } else {
-          // Update existing recipe
-          await client.query(
-            'UPDATE recipes SET sales = $1 WHERE id = $2',
-            [item.sales, recipe.rows[0].id]
+          // If recipe doesn't exist, create it with default values
+          const insertResult = await client.query(
+            `INSERT INTO recipes 
+             (name, sales, created_at, updated_at, category, total_cost, 
+              selling_price, profit_margin, markup_factor, print_menu_ready, 
+              qr_menu_ready, website_menu_ready, available_for_delivery) 
+             VALUES (
+               $1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 
+               'Uncategorized', 0, 0, 0, 1, false, false, false, true
+             )
+             RETURNING id, name, sales`,
+            [cleanName, sales]
           );
-          results.updated.push({
-            name: item.name,
-            id: recipe.rows[0].id,
-            sales: item.sales
-          });
+          
+          if (insertResult.rows.length > 0) {
+            createdRecipes.push(insertResult.rows[0]);
+            logger.info(`Created new recipe: ${cleanName}`, { 
+              id: insertResult.rows[0].id,
+              sales 
+            });
+          } else {
+            failedRecipes.push({ 
+              name: cleanName,
+              error: 'Failed to create recipe. Database error.'
+            });
+            logger.error(`Failed to create recipe: ${cleanName}`);
+          }
         }
       } catch (error) {
-        results.failed.push({
-          name: item.name,
-          error: error.message
+        failedRecipes.push({ 
+          name,
+          error: `Database error: ${error.message}`
         });
+        logger.error(`Error processing recipe ${name}:`, error);
+        
+        // Rollback on critical errors
+        if (error.code === '23505') { // Unique violation
+          await client.query('ROLLBACK');
+          throw new Error(`Duplicate recipe name found: ${name}`);
+        }
       }
     }
 
     await client.query('COMMIT');
-
-    res.json({
+    
+    const response = {
       success: true,
-      results: {
-        updated: results.updated,
-        created: results.created,
-        failed: results.failed
+      message: 'Sales data imported successfully',
+      updatedRecipes,
+      createdRecipes,
+      failedRecipes,
+      summary: {
+        total: salesData.length,
+        updated: updatedRecipes.length,
+        created: createdRecipes.length,
+        failed: failedRecipes.length,
+        timestamp: new Date().toISOString()
       }
-    });
+    };
+
+    logger.info('Sales import completed:', response.summary);
+    res.json(response);
 
   } catch (error) {
-    if (client) await client.query('ROLLBACK');
-    console.error('Error in sales import:', error);
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        logger.error('Error during rollback:', rollbackError);
+      }
+    }
+    
+    logger.error('Error in sales import:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to process sales data',
-      details: error.message
+      message: error.message,
+      timestamp: new Date().toISOString()
     });
   } finally {
-    if (client) client.release();
+    if (client) {
+      try {
+        await client.release();
+      } catch (releaseError) {
+        logger.error('Error releasing client:', releaseError);
+      }
+    }
   }
-});
+}
 
 // Serve static files if in production
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../build')));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../build', 'index.html'));
+  // Redirect root to the frontend URL
+  app.get('/', (req, res) => {
+    res.redirect('https://recipe.consciouscafe.in');
   });
 }
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Error occurred:', err);
+  logger.error('Application error:', {
+    error: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    path: req.path,
+    method: req.method
+  });
   
-  // Always return JSON response
   res.status(err.status || 500).json({
-    error: err.message || 'Internal server error',
-    details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message
   });
 });
 
 // Catch-all handler for debugging - MUST be last
 app.use('*', (req, res) => {
-  console.log('Catch-all hit:', {
+  logger.info('Catch-all hit:', {
     method: req.method,
     url: req.url,
     originalUrl: req.originalUrl,
@@ -857,6 +1085,6 @@ app.use('*', (req, res) => {
 // Start the server
 const port = process.env.PORT || 3001;
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-  console.log('Environment:', process.env.NODE_ENV);
+  logger.info(`Server running on port ${port}`);
+  logger.info('Environment:', process.env.NODE_ENV);
 });

@@ -6,19 +6,31 @@ import config from '../config';
 const DataManager = ({ recipes, onSalesUpdate }) => {
   const [error, setError] = useState({ message: '', type: '' });
   const [importLogs, setImportLogs] = useState(() => {
+    const defaultLogs = {
+      sales: {
+        lastImport: null,
+        stats: null,
+        errors: []
+      }
+    };
+
     try {
       const savedLogs = localStorage.getItem('importLogs');
-      const parsedLogs = savedLogs ? JSON.parse(savedLogs) : {
-        sales: []
-      };
+      if (!savedLogs) return defaultLogs;
+
+      const parsedLogs = JSON.parse(savedLogs);
+      
+      // Ensure the parsed logs have the correct structure
       return {
-        sales: Array.isArray(parsedLogs.sales) ? parsedLogs.sales : []
+        sales: {
+          lastImport: parsedLogs.sales?.lastImport || null,
+          stats: parsedLogs.sales?.stats || null,
+          errors: Array.isArray(parsedLogs.sales?.errors) ? parsedLogs.sales.errors : []
+        }
       };
     } catch (error) {
       console.error('Error loading import logs:', error);
-      return {
-        sales: []
-      };
+      return defaultLogs;
     }
   });
   const [importStats, setImportStats] = useState(null);
@@ -62,21 +74,39 @@ const DataManager = ({ recipes, onSalesUpdate }) => {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
       const ws = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(ws);
+      const jsonData = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Use header:1 to get array format
       
-      console.log('Imported data:', jsonData);
-      
-      // Transform data for the new endpoint
-      const recipesData = jsonData.map(row => ({
-        name: row['Recipe Name'],
-        sales: parseInt(row['Sales Quantity']) || 0
-      })).filter(recipe => recipe.name && recipe.sales >= 0);
+      // Validate header row
+      const headerRow = jsonData[0];
+      if (!headerRow || headerRow.length < 2 || 
+          !headerRow[0]?.toString().toLowerCase().includes('recipe') ||
+          !headerRow[1]?.toString().toLowerCase().includes('sales')) {
+        throw new Error('Invalid file format. Expected columns: Recipe Name, Sales Quantity');
+      }
 
-      console.log('Processing sales data:', recipesData);
+      // Transform and validate data
+      const recipesData = jsonData
+        .slice(1) // Skip header row
+        .map((row, index) => {
+          const name = row[0]?.toString().trim();
+          const sales = parseInt(row[1]);
+          
+          if (!name || isNaN(sales)) {
+            console.warn(`Skipping invalid row ${index + 2}: ${JSON.stringify(row)}`);
+            return null;
+          }
+          
+          return { name, sales };
+        })
+        .filter(Boolean); // Remove null entries
 
-      // Update sales data using the new endpoint
+      if (recipesData.length === 0) {
+        throw new Error('No valid recipe data found in the file');
+      }
+
+      // Update sales data
       const response = await fetch(`${config.API_URL}/recipes/sales-import`, {
-        method: 'POST',
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -85,47 +115,56 @@ const DataManager = ({ recipes, onSalesUpdate }) => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Server response:', errorText);
         throw new Error(
           response.status === 404 
             ? 'API endpoint not found. Please check server configuration.' 
-            : `Server error: ${response.status}`
+            : `Server error (${response.status}): ${errorText}`
         );
       }
 
       const result = await response.json();
       
-      // Add import log with detailed information
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to import sales data');
+      }
+
+      // Update import logs with current state
       const logDetails = {
-        totalRows: jsonData.length,
-        processedRows: recipesData.length,
-        updatedRecipes: result.results.updated.map(r => ({ name: r.name, sales: r.sales })),
-        newRecipes: result.results.created.map(r => ({ name: r.name, sales: r.sales })),
-        failedRecipes: result.results.failed.map(r => ({ name: r.name, error: r.error })),
-        timestamp: new Date().toISOString()
+        lastImport: new Date().toISOString(),
+        stats: {
+          totalRows: jsonData.length - 1, // Exclude header
+          processedRows: recipesData.length,
+          updated: result.summary.updated,
+          created: result.summary.created,
+          failed: result.summary.failed
+        },
+        errors: result.failedRecipes.map(f => ({
+          recipe: f.name,
+          error: f.error,
+          timestamp: new Date().toISOString()
+        }))
       };
 
-      console.log('Import completed:', logDetails);
-      addImportLog('sales', 'success', logDetails);
+      setImportLogs(prev => ({
+        ...prev,
+        sales: logDetails
+      }));
       
       // Set import stats for UI feedback
-      setImportStats({
-        totalRows: jsonData.length,
-        processedRows: recipesData.length,
-        updated: result.results.updated.length,
-        created: result.results.created.length,
-        failed: result.results.failed.length
-      });
+      setImportStats(logDetails.stats);
 
       // Show success message with details
       const message = [
         'Sales data imported successfully:',
-        `${result.results.updated.length} recipes updated`,
-        `${result.results.created.length} new recipes created`,
-        result.results.failed.length > 0 ? `${result.results.failed.length} recipes failed` : ''
+        `${result.summary.updated} recipes updated`,
+        `${result.summary.created} new recipes created`,
+        result.summary.failed > 0 ? `${result.summary.failed} failed` : ''
       ].filter(Boolean).join(', ');
 
-      setError({ message, type: 'success' });
+      setError({ 
+        message, 
+        type: result.summary.failed > 0 ? 'warning' : 'success' 
+      });
 
       // Trigger callback to refresh recipes list
       if (onSalesUpdate) {
@@ -133,17 +172,29 @@ const DataManager = ({ recipes, onSalesUpdate }) => {
       }
     } catch (error) {
       console.error('Error importing sales:', error);
+      
+      // Update error logs
+      setImportLogs(prev => ({
+        ...prev,
+        sales: {
+          ...prev.sales,
+          errors: [
+            {
+              error: error.message,
+              timestamp: new Date().toISOString()
+            },
+            ...prev.sales.errors
+          ].slice(0, 10) // Keep last 10 errors
+        }
+      }));
+
       setError({ 
-        message: error.message || 'Failed to import sales data', 
+        message: `Failed to import sales data: ${error.message}`, 
         type: 'error' 
-      });
-      addImportLog('sales', 'error', {
-        error: error.message,
-        timestamp: new Date().toISOString()
       });
     }
 
-    // Reset file input
+    // Clear file input
     event.target.value = '';
   };
 
@@ -243,67 +294,47 @@ const DataManager = ({ recipes, onSalesUpdate }) => {
           <div className="import-history">
             <h3>Recent Import History</h3>
             <div className="history-list">
-              {importLogs.sales.slice(0, 10).map((log, index) => (
-                <div key={index} className={`history-item ${log.status}`}>
+              {(importLogs.sales?.errors || []).map((log, index) => (
+                <div key={index} className={`history-item error`}>
                   <div className="history-header">
                     <span className="history-date">{formatTimestamp(log.timestamp)}</span>
-                    <span className={`history-status ${log.status}`}>
-                      {log.status === 'success' ? '✓' : '✗'}
-                    </span>
+                    <span className="history-status error">✗</span>
                   </div>
                   <div className="history-details">
-                    <div className="history-summary">
-                      <span>Total Rows: {log.details?.totalRows || 0}</span>
-                      <span>Processed: {log.details?.processedRows || 0}</span>
+                    <div className="error-message">
+                      Error: {log.error}
                     </div>
-                    {log.status === 'success' && (
-                      <>
-                        {log.details?.updatedRecipes?.length > 0 && (
-                          <div className="history-section">
-                            <strong>Updated Recipes:</strong>
-                            <div className="recipe-list">
-                              {log.details.updatedRecipes.map((recipe, idx) => (
-                                <div key={idx} className="recipe-item">
-                                  {recipe.name} (Sales: {recipe.sales})
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {log.details?.newRecipes?.length > 0 && (
-                          <div className="history-section">
-                            <strong>New Recipes:</strong>
-                            <div className="recipe-list">
-                              {log.details.newRecipes.map((recipe, idx) => (
-                                <div key={idx} className="recipe-item">
-                                  {recipe.name} (Sales: {recipe.sales})
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {log.details?.failedRecipes?.length > 0 && (
-                          <div className="history-section error">
-                            <strong>Failed Recipes:</strong>
-                            <div className="recipe-list">
-                              {log.details.failedRecipes.map((recipe, idx) => (
-                                <div key={idx} className="recipe-item">
-                                  {recipe.name} - Error: {recipe.error}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {log.status === 'error' && (
-                      <div className="error-message">
-                        Error: {log.details?.error || 'Unknown error'}
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}
+              {importLogs.sales?.stats && (
+                <div className={`history-item success`}>
+                  <div className="history-header">
+                    <span className="history-date">
+                      {formatTimestamp(importLogs.sales.lastImport)}
+                    </span>
+                    <span className="history-status success">✓</span>
+                  </div>
+                  <div className="history-details">
+                    <div className="history-summary">
+                      <span>Total Rows: {importLogs.sales.stats.totalRows}</span>
+                      <span>Processed: {importLogs.sales.stats.processedRows}</span>
+                    </div>
+                    <div className="history-section">
+                      <strong>Results:</strong>
+                      <div className="recipe-list">
+                        <div className="recipe-item">
+                          {importLogs.sales.stats.updated} recipes updated
+                          {importLogs.sales.stats.created > 0 && 
+                            `, ${importLogs.sales.stats.created} new recipes created`}
+                          {importLogs.sales.stats.failed > 0 && 
+                            `, ${importLogs.sales.stats.failed} failed`}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

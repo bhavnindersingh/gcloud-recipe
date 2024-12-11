@@ -254,31 +254,13 @@ function App() {
     navigate('/manager/show-recipe');
   };
 
-  const handleSalesUpdate = async (recipesData) => {
+  const handleSalesUpdate = async () => {
     try {
-      console.log('Updating sales data:', recipesData);
-      
-      const response = await fetch(`${config.API_URL}/recipes/sales-import`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ recipes: recipesData })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update sales data');
-      }
-
-      const result = await response.json();
-      console.log('Sales update result:', result);
-
-      // Refresh recipes list after update
+      // Only refresh the recipes list
       await fetchRecipes();
       return true;
     } catch (error) {
-      console.error('Error updating sales:', error);
+      console.error('Error refreshing recipes:', error);
       return false;
     }
   };
