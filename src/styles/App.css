@@ -3,6 +3,8 @@
   display: flex;
   flex-direction: column;
   background-color: #f5f7fa;
+  overflow-y: auto;
+  position: relative;
 }
 
 .app main {
@@ -11,6 +13,7 @@
   max-width: 1920px;
   margin: 0 auto;
   width: 100%;
+  overflow-y: auto;
 }
 
 .app-header {

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { RECIPE_CATEGORIES } from '../constants/categories';
 import '../styles/NewRecipeForm.css';
 import { useNavigate } from 'react-router-dom';
+import config from '../config/env';
+import { createPortal } from 'react-dom';
 
 // Empty recipe template
 const emptyRecipe = {
@@ -35,6 +37,101 @@ const emptyRecipe = {
   delivery_image_preview: null
 };
 
+// Image preview component
+const ImagePreview = ({ url, onRemove, alt, isViewMode }) => {
+  const [showEnlarged, setShowEnlarged] = useState(false);
+  
+  if (!url) return null;
+
+  // Handle blob URLs, full URLs, and relative paths correctly
+  const imageUrl = url.startsWith('blob:') || url.startsWith('http') ? url :
+    `https://storage.googleapis.com/conscious-cafe-recipe-2024-uploads/${url}`;
+
+  const handleImageClick = (e) => {
+    e.stopPropagation();
+    setShowEnlarged(true);
+  };
+
+  const handleOverlayClick = (e) => {
+    if (e.target === e.currentTarget) {
+      setShowEnlarged(false);
+    }
+  };
+
+  const handleCloseClick = (e) => {
+    e.stopPropagation();
+    setShowEnlarged(false);
+  };
+
+  const EnlargedView = () => (
+    <div className="enlarged-image-overlay" onClick={handleOverlayClick}>
+      <div className="enlarged-image-container">
+        <img src={imageUrl} alt={alt} />
+      </div>
+      <button 
+        className="close-enlarged-btn" 
+        onClick={handleCloseClick}
+        aria-label="Close enlarged view"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M18 6L6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="image-preview-container">
+      <img 
+        src={imageUrl} 
+        alt={alt} 
+        style={{ cursor: 'pointer' }}
+        onClick={handleImageClick}
+        onError={(e) => {
+          console.error('Image failed to load:', {
+            originalUrl: imageUrl,
+            error: e.error
+          });
+          // Only try alternative URL if it's not a blob URL
+          if (!url.startsWith('blob:') && imageUrl.includes('conscious-cafe-recipe-2024-uploads')) {
+            const assetUrl = `https://storage.googleapis.com/recipe.consciouscafe.in/${url.split('/').pop()}`;
+            console.log('Trying Assets URL:', assetUrl);
+            e.target.src = assetUrl;
+          } else {
+            e.target.src = '/placeholder-recipe.png';
+          }
+        }}
+      />
+      <div className="image-actions">
+        <button 
+          type="button" 
+          className="image-action-btn fullscreen"
+          onClick={handleImageClick}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+          </svg>
+        </button>
+        {!isViewMode && (
+          <button 
+            type="button" 
+            className="image-action-btn remove" 
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        )}
+      </div>
+      {showEnlarged && createPortal(<EnlargedView />, document.body)}
+    </div>
+  );
+};
+
 const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'create', initialRecipe, viewingRecipe, recipes }) => {
   const [error, setError] = useState({ message: '', type: '' });
   const [isDuplicateName, setIsDuplicateName] = useState(false);
@@ -55,10 +152,11 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
       return {
         ...editingRecipe,
         image_preview: editingRecipe.image_url,
-        delivery_image_preview: editingRecipe.delivery_image_url
+        delivery_image_preview: editingRecipe.delivery_image_url,
+        ingredients: editingRecipe.ingredients || []
       };
     }
-    return emptyRecipe;
+    return { ...emptyRecipe, ingredients: [] };
   });
 
   // Update recipe when viewingRecipe changes
@@ -140,7 +238,7 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
   });
 
   // Track ingredients length changes
-  const ingredientsLength = recipe.ingredients?.length || 0;
+  const ingredientsLength = (recipe.ingredients || []).length;
   
   useEffect(() => {
     if (ingredientsLength) {
@@ -154,116 +252,175 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     }
   }, [ingredientsLength]);
 
-  const handleImageChange = (e, isDeliveryImage = false) => {
-    if (isViewMode) return;
+  // Update preview when editing existing recipe
+  useEffect(() => {
+    if (editingRecipe) {
+      setRecipe(prev => ({
+        ...editingRecipe,
+        image_preview: editingRecipe.image_url,
+        delivery_image_preview: editingRecipe.delivery_image_url,
+        ingredients: editingRecipe.ingredients || []
+      }));
+    }
+  }, [editingRecipe]);
+
+  const [imageFile, setImageFile] = useState(null);
+  const [deliveryImageFile, setDeliveryImageFile] = useState(null);
+
+  const handleImageChange = async (e, type = 'image') => {
     const file = e.target.files[0];
     if (file) {
-      const objectUrl = URL.createObjectURL(file);
-      if (isDeliveryImage) {
+      try {
+        // Create a temporary preview URL for the selected file
+        const previewUrl = URL.createObjectURL(file);
         setRecipe(prev => ({
           ...prev,
-          delivery_image: file,
-          delivery_image_preview: objectUrl,
-          delivery_image_url: null
+          [type]: file,
+          [`${type}_preview`]: previewUrl,
+          // Keep the URL field empty until upload completes
+          [`${type}_url`]: null
         }));
-      } else {
-        setRecipe(prev => ({
-          ...prev,
-          image: file,
-          image_preview: objectUrl,
-          image_url: null
-        }));
+
+        if (type === 'image') {
+          setImageFile(file);
+        } else {
+          setDeliveryImageFile(file);
+        }
+      } catch (error) {
+        console.error('Error handling image change:', error);
       }
     }
   };
 
-  const handleReset = () => {
-    setRecipe(emptyRecipe);
-    setError({ message: '', type: '' });
-  };
-
-  // Handle form submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    console.log('Form submitted');
-    
-    // Validate required fields
-    if (!recipe.name || !recipe.category || !recipe.selling_price || !recipe.sales) {
-      console.log('Validation failed');
-      showToast('Please fill in all required fields', 'error');
-      return;
+  const handleImageUpload = async (file, fieldName) => {
+    if (!file) {
+      console.log('No file provided for upload');
+      return null;
     }
 
-    // Check for duplicate recipe names only in create mode
-    if (mode === 'create') {
-      const isDuplicate = recipes.some(existingRecipe => 
-        existingRecipe.name.toLowerCase() === recipe.name.toLowerCase()
-      );
+    console.log('Uploading file:', {
+      name: file.name,
+      type: file.type,
+      size: file.size
+    });
 
-      if (isDuplicate) {
-        showToast('A recipe with this name already exists. Please use a different name.', 'error');
-        return;
-      }
-    }
-
-    // Format and validate numeric values
-    const sellingPrice = parseInt(recipe.selling_price) || 0;
-    const sales = parseInt(recipe.sales) || 0;
-    const overhead = parseFloat(recipe.overhead || 0);
-
-    // Validate numeric ranges
-    if (sellingPrice > 999999) {
-      showToast('Selling price cannot exceed 999,999', 'error');
-      return;
-    }
-
-    if (sales > 999999) {
-      showToast('Sales cannot exceed 999,999', 'error');
-      return;
-    }
-
-    // Calculate revenue and profit as whole numbers
-    const totalCost = parseFloat(recipe.total_cost || 0);
-    const revenue = Math.round(sellingPrice * sales);
-    const profit = Math.round(revenue - (totalCost * sales));
-    const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
-    const markupFactor = totalCost > 0 ? sellingPrice / totalCost : 0;
-
-    // Format numeric values with proper precision
-    const formattedRecipe = {
-      ...recipe,
-      id: recipe.id || null,
-      selling_price: sellingPrice,
-      sales: sales,
-      overhead: overhead.toFixed(2),
-      total_cost: parseFloat(recipe.total_cost || 0).toFixed(2),
-      revenue: revenue.toString(),
-      profit: profit.toString(),
-      profit_margin: profitMargin.toFixed(2),
-      markup_factor: markupFactor.toFixed(2),
-      ingredients: recipe.ingredients.map(ing => ({
-        ...ing,
-        quantity: parseFloat(ing.quantity || 0).toFixed(2)
-      }))
-    };
+    const formData = new FormData();
+    formData.append('image', file);
 
     try {
-      console.log('Submitting recipe...', formattedRecipe);
-      await onSubmit(formattedRecipe);
-      console.log('Recipe submitted successfully');
-      const message = recipe.id ? 'Recipe updated successfully!' : 'Recipe created successfully!';
-      showToast(message, 'success');
-      
-      // Wait for a short time to ensure toast is visible
-      setTimeout(() => {
-        navigate('/manager');
-      }, 1000);
+      console.log('Sending upload request to:', `${config.API_URL}/upload-to-storage`);
+      const response = await fetch(`${config.API_URL}/upload-to-storage`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Upload failed:', errorData);
+        throw new Error(errorData.error || 'Failed to upload image');
+      }
+
+      const data = await response.json();
+      console.log('Upload successful:', data);
+      return data.url;
     } catch (error) {
-      console.error('Error submitting recipe:', error);
-      const errorMessage = error.message?.includes('numeric field overflow') 
-        ? 'Please check your numeric values are within valid ranges'
-        : error.message || 'Failed to save recipe. Please try again.';
-      showToast(errorMessage, 'error');
+      console.error('Error uploading image:', error);
+      setError({ message: error.message, type: 'error' });
+      return null;
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    try {
+      // Validate required fields
+      if (mode === 'create') {
+        if (!recipe.name?.trim()) {
+          setError({ message: 'Recipe name is required', type: 'error' });
+          return;
+        }
+        // Check for duplicate names only in create mode
+        if (recipes) {
+          const isDuplicate = recipes.some(
+            existingRecipe => 
+              existingRecipe.name.toLowerCase().trim() === recipe.name.toLowerCase().trim() &&
+              existingRecipe.id !== recipe.id
+          );
+          if (isDuplicate) {
+            setError({ message: 'A recipe with this name already exists', type: 'error' });
+            return;
+          }
+        }
+      }
+      
+      if (!recipe.category?.trim()) {
+        setError({ message: 'Category is required', type: 'error' });
+        return;
+      }
+      
+      // Ensure ingredients array exists and has items
+      const currentIngredients = recipe.ingredients || [];
+      if (currentIngredients.length === 0) {
+        setError({ message: 'At least one ingredient is required', type: 'error' });
+        return;
+      }
+
+      // Handle image uploads only if there are new files
+      let imageUrl = recipe.image_url;
+      let deliveryImageUrl = recipe.delivery_image_url;
+
+      if (imageFile) {
+        imageUrl = await handleImageUpload(imageFile, 'image');
+        if (!imageUrl) return;
+      }
+
+      if (deliveryImageFile) {
+        deliveryImageUrl = await handleImageUpload(deliveryImageFile, 'deliveryImage');
+        if (!deliveryImageUrl) return;
+      }
+
+      // Prepare recipe data
+      const recipeData = {
+        ...recipe,
+        category: recipe.category.trim(),
+        preparation_steps: recipe.preparation_steps || '',
+        cooking_method: recipe.cooking_method || '',
+        plating_instructions: recipe.plating_instructions || '',
+        chefs_notes: recipe.chefs_notes || '',
+        selling_price: Number(recipe.selling_price) || 0,
+        sales: Number(recipe.sales) || 0,
+        overhead: Number(recipe.overhead) || 0,
+        total_cost: Number(recipe.total_cost) || 0,
+        profit_margin: Number(recipe.profit_margin) || 0,
+        revenue: Number(recipe.revenue) || 0,
+        profit: Number(recipe.profit) || 0,
+        markup_factor: Number(recipe.markup_factor) || 0,
+        print_menu_ready: Boolean(recipe.print_menu_ready),
+        qr_menu_ready: Boolean(recipe.qr_menu_ready),
+        website_menu_ready: Boolean(recipe.website_menu_ready),
+        available_for_delivery: Boolean(recipe.available_for_delivery),
+        image_url: imageUrl,
+        delivery_image_url: deliveryImageUrl,
+        ingredients: currentIngredients.map(ing => ({
+          id: Number(ing.id),
+          quantity: Number(ing.quantity)
+        }))
+      };
+
+      // Call onSubmit with the prepared data
+      if (onSubmit) {
+        await onSubmit(recipeData, recipe.id);
+      }
+
+      // Show success message
+      setError({ message: `Recipe ${mode === 'edit' ? 'updated' : 'created'} successfully`, type: 'success' });
+      
+      // Navigate back to manager after success
+      navigate('/manager');
+    } catch (err) {
+      console.error('Error saving recipe:', err);
+      setError({ message: err.message, type: 'error' });
     }
   };
 
@@ -289,7 +446,7 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
 
   // Handle delivery image change
   const handleDeliveryImageChange = (e) => {
-    handleImageChange(e, true);
+    handleImageChange(e, 'delivery_image');
   };
 
   // Handle delivery image removal
@@ -331,48 +488,63 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
 
   const handleAddIngredient = () => {
     if (isViewMode) return;
-    
+
+    // Validate ingredient selection
     if (!selectedIngredient.id) {
       setError({ message: 'Please select an ingredient', type: 'error' });
       return;
     }
 
+    // Validate quantity
     const quantity = parseFloat(selectedIngredient.quantity);
     if (isNaN(quantity) || quantity <= 0) {
       setError({ message: 'Please enter a valid quantity', type: 'error' });
       return;
     }
 
-    // Check if ingredient already exists
-    const existingIngredient = recipe.ingredients.find(ing => ing.id === parseInt(selectedIngredient.id));
-    if (existingIngredient) {
-      setError({ message: 'This ingredient is already added to the recipe', type: 'error' });
-      return;
-    }
-
-    const selectedIng = ingredients.find(i => i.id === parseInt(selectedIngredient.id));
+    // Find the selected ingredient from the ingredients list
+    const selectedIng = ingredients.find(ing => ing.id === parseInt(selectedIngredient.id));
     if (!selectedIng) {
       setError({ message: 'Selected ingredient not found', type: 'error' });
       return;
     }
 
-    const cost = parseFloat(selectedIng.cost);
+    const cost = parseFloat(selectedIng.cost) || 0;
     const totalCost = cost * quantity;
 
-    setRecipe(prev => ({
-      ...prev,
-      ingredients: [
-        ...prev.ingredients,
-        {
+    // Ensure recipe.ingredients exists
+    const currentIngredients = recipe.ingredients || [];
+    
+    // Check if ingredient already exists
+    const existingIngredientIndex = currentIngredients.findIndex(ing => ing.id === parseInt(selectedIngredient.id));
+
+    setRecipe(prev => {
+      const updatedIngredients = [...(prev.ingredients || [])];
+      
+      if (existingIngredientIndex !== -1) {
+        // Update existing ingredient
+        updatedIngredients[existingIngredientIndex] = {
+          ...updatedIngredients[existingIngredientIndex],
+          quantity: (parseFloat(updatedIngredients[existingIngredientIndex].quantity) + quantity).toFixed(2),
+          totalCost: (parseFloat(updatedIngredients[existingIngredientIndex].totalCost) + totalCost).toFixed(2)
+        };
+      } else {
+        // Add new ingredient
+        updatedIngredients.push({
           id: parseInt(selectedIngredient.id),
           name: selectedIng.name,
           unit: selectedIng.unit,
           cost: cost.toFixed(2),
           quantity: quantity.toFixed(2),
           totalCost: totalCost.toFixed(2)
-        }
-      ]
-    }));
+        });
+      }
+
+      return {
+        ...prev,
+        ingredients: updatedIngredients
+      };
+    });
 
     // Reset selected ingredient
     setSelectedIngredient({
@@ -386,7 +558,10 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
   };
 
   useEffect(() => {
-    // First, ensure all ingredients have proper totalCost
+    // First, ensure recipe exists and has ingredients array
+    if (!recipe || !recipe.ingredients) return;
+    
+    // Then, ensure all ingredients have proper totalCost
     const updatedIngredients = recipe.ingredients.map(ing => {
       const quantity = parseFloat(ing.quantity) || 0;
       const cost = parseFloat(ing.cost) || 0;
@@ -406,7 +581,7 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
     }
 
     const totalIngredientsCost = updatedIngredients.reduce((sum, ing) => {
-      return sum + parseFloat(ing.totalCost);
+      return sum + parseFloat(ing.totalCost || 0);
     }, 0);
 
     const overhead = parseFloat(recipe.overhead) || 0;
@@ -440,7 +615,7 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
       );
       setIsDuplicateName(duplicate);
       if (duplicate) {
-        showToast('A recipe with this name already exists. Please use a different name.', 'error');
+        setError({ message: 'A recipe with this name already exists. Please use a different name.', type: 'error' });
       }
     }
   };
@@ -522,36 +697,7 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
                   </label>
                 </div>
               ) : (
-                <div className="image-preview-container">
-                  <img
-                    src={recipe.image_preview || recipe.image_url}
-                    alt="Recipe preview"
-                    onClick={() => setShowImageModal(true)}
-                    style={{ cursor: 'pointer' }}
-                  />
-                  <div className="image-actions">
-                    <button
-                      type="button"
-                      className="image-action-btn fullscreen"
-                      onClick={() => setShowImageModal(true)}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
-                      </svg>
-                    </button>
-                    {!isViewMode && (
-                      <button
-                        type="button"
-                        className="image-action-btn remove"
-                        onClick={handleRemoveImage}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-                          <path d="M18 6L6 18M6 6l12 12"/>
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <ImagePreview url={recipe.image_preview || recipe.image_url} onRemove={handleRemoveImage} alt="Recipe preview" isViewMode={isViewMode} />
               )}
             </div>
           </div>
@@ -684,11 +830,11 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
                 </tr>
               </thead>
               <tbody>
-                {recipe.ingredients.map((ing, index) => (
+                {(recipe.ingredients || []).map((ing, index) => (
                   <tr key={ing.uniqueId || `${ing.id}-${Date.now()}-${index}`}>
                     <td className="ingredient-name">{ing.name}</td>
                     <td className="ingredient-quantity">{ing.quantity} {ing.unit}</td>
-                    <td className="ingredient-cost">₹{parseFloat(ing.totalCost).toFixed(2)}</td>
+                    <td className="ingredient-cost">₹{parseFloat(ing.totalCost)}</td>
                     <td>
                       <button
                         type="button"
@@ -716,11 +862,11 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
             </table>
           </div>
 
-          {recipe.ingredients.length > 0 && (
+          {(recipe.ingredients || []).length > 0 && (
             <div className="ingredients-total">
               <span className="total-label">Total Ingredients Cost:</span>
               <span className="total-amount">
-                ₹{recipe.ingredients.reduce((sum, ing) => sum + parseFloat(ing.totalCost), 0).toFixed(2)}
+                ₹{(recipe.ingredients || []).reduce((sum, ing) => sum + parseFloat(ing.totalCost || 0), 0).toFixed(2)}
               </span>
             </div>
           )}
@@ -889,36 +1035,7 @@ const RecipeForm = ({ ingredients, onSubmit, editingRecipe, onCancel, mode = 'cr
                     </label>
                   </div>
                 ) : (
-                  <div className="image-preview-container">
-                    <img
-                      src={recipe.delivery_image_preview || recipe.delivery_image_url}
-                      alt="Delivery preview"
-                      onClick={() => setShowDeliveryImageModal(true)}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <div className="image-actions">
-                      <button
-                        type="button"
-                        className="image-action-btn fullscreen"
-                        onClick={() => setShowDeliveryImageModal(true)}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-                          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
-                        </svg>
-                      </button>
-                      {!isViewMode && (
-                        <button
-                          type="button"
-                          className="image-action-btn remove"
-                          onClick={handleRemoveDeliveryImage}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-                            <path d="M18 6L6 18M6 6l12 12"/>
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <ImagePreview url={recipe.delivery_image_preview || recipe.delivery_image_url} onRemove={handleRemoveDeliveryImage} alt="Delivery preview" isViewMode={isViewMode} />
                 )}
               </div>
             </div>

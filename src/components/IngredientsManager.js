@@ -69,14 +69,17 @@ const IngredientsManager = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: newIngredient.name,
+          name: newIngredient.name.trim(),
           cost: Number(newIngredient.cost),
-          unit: newIngredient.unit,
-          category: newIngredient.category
+          unit: newIngredient.unit.trim(),
+          category: newIngredient.category.trim()
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to add ingredient');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add ingredient');
+      }
       
       const savedIngredient = await response.json();
       console.log('Saved ingredient:', savedIngredient);
@@ -87,10 +90,10 @@ const IngredientsManager = () => {
         cost: '',
         category: 'Vegetables & Fruits'
       });
-      showToast('Ingredient added successfully', 'success');
+      setError({ message: 'Ingredient added successfully', type: 'success' });
     } catch (err) {
       console.error('Error saving ingredient:', err);
-      showToast('Failed to save ingredient', 'error');
+      setError({ message: err.message, type: 'error' });
     }
   };
 
@@ -277,21 +280,19 @@ const IngredientsManager = () => {
   };
 
   const validateIngredient = () => {
-    if (!newIngredient.name.trim()) return 'Name is required';
-    if (!newIngredient.unit.trim()) return 'Unit is required';
-    if (!newIngredient.cost || isNaN(newIngredient.cost) || Number(newIngredient.cost) <= 0) {
-      return 'Cost must be a positive number';
+    if (!newIngredient.name?.trim()) {
+      return 'Name is required';
     }
-    
-    // Check for duplicate ingredient names (case-insensitive)
-    const isDuplicate = ingredients.some(
-      ingredient => ingredient.name.toLowerCase() === newIngredient.name.trim().toLowerCase()
-    );
-    if (isDuplicate) {
-      return 'This ingredient already exists';
+    if (!newIngredient.unit?.trim()) {
+      return 'Unit is required';
     }
-    
-    return '';
+    if (!newIngredient.cost || isNaN(Number(newIngredient.cost))) {
+      return 'Cost must be a valid number';
+    }
+    if (!newIngredient.category?.trim()) {
+      return 'Category is required';
+    }
+    return null;
   };
 
   return (

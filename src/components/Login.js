@@ -1,9 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import '../styles/Login.css';
 
 const Login = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    // Add login-page class when component mounts
+    document.body.classList.add('login-page');
+    
+    // Remove login-page class when component unmounts
+    return () => {
+      document.body.classList.remove('login-page');
+    };
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();

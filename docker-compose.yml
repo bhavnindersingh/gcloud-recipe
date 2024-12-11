@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=https://recipe-backend-786959629970.us-central1.run.app
+      - REACT_APP_STORAGE_URL=https://storage.googleapis.com/recipe.consciouscafe.in
+      - REACT_APP_BUCKET_NAME=conscious-cafe-recipe-2024-uploads
+      - REACT_APP_PUBLIC_URL=/recipe
+      - REACT_APP_BASE_PATH=/recipe
+      - GENERATE_SOURCEMAP=false
+    networks:
+      - recipe-network
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - DB_USER=postgres
+      - DB_NAME=recipe_db
+      - DB_HOST=34.172.94.190
+      - POSTGRES_PASSWORD=ConsciousCafe2024!
+      - CLOUD_SQL_CONNECTION_NAME=conscious-cafe-recipe-2024:us-central1:recipe-db
+      - STORAGE_BUCKET=conscious-cafe-recipe-2024-uploads
+      - ALLOWED_ORIGINS=["https://recipe.consciouscafe.in"]
+    networks:
+      - recipe-network
+
+networks:
+  recipe-network:
+    driver: bridge

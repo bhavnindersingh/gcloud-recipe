@@ -66,126 +66,85 @@ const DataManager = ({ recipes, onSalesUpdate }) => {
       
       console.log('Imported data:', jsonData);
       
-      // Process imported data
-      const existingRecipes = new Map(recipes.map(r => [r.name.toLowerCase(), r]));
-      console.log('Existing recipes:', [...existingRecipes.entries()].map(([key, value]) => ({ name: key, id: value.id })));
+      // Transform data for the new endpoint
+      const recipesData = jsonData.map(row => ({
+        name: row['Recipe Name'],
+        sales: parseInt(row['Sales Quantity']) || 0
+      })).filter(recipe => recipe.name && recipe.sales >= 0);
+
+      console.log('Processing sales data:', recipesData);
+
+      // Update sales data using the new endpoint
+      const response = await fetch(`${config.API_URL}/recipes/sales-import`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recipes: recipesData })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server response:', errorText);
+        throw new Error(
+          response.status === 404 
+            ? 'API endpoint not found. Please check server configuration.' 
+            : `Server error: ${response.status}`
+        );
+      }
+
+      const result = await response.json();
       
-      const stats = {
-        totalRows: jsonData.length,
-        updatedRecipes: [],
-        newRecipes: []
-      };
-
-      // Transform data and prepare updates
-      const updatedRecipes = [];
-      const newRecipesToCreate = [];
-
-      jsonData.forEach(row => {
-        const recipeName = row['Recipe Name'];
-        if (!recipeName) {
-          console.warn('Skipping row with no recipe name:', row);
-          return;
-        }
-
-        const salesQuantity = parseInt(row['Sales Quantity']) || 0;
-        const lowerName = recipeName.toLowerCase();
-        console.log(`Processing recipe: ${recipeName} (${lowerName}), sales: ${salesQuantity}`);
-
-        if (existingRecipes.has(lowerName)) {
-          // Update existing recipe
-          const existingRecipe = existingRecipes.get(lowerName);
-          console.log('Found existing recipe:', existingRecipe);
-          const updatedRecipe = {
-            ...existingRecipe,
-            sales: salesQuantity  // Directly set sales instead of adding
-          };
-          console.log('Updating recipe with new data:', updatedRecipe);
-          updatedRecipes.push(updatedRecipe);
-          stats.updatedRecipes.push(recipeName);
-        } else {
-          console.log('Creating new recipe:', recipeName);
-          // Create new recipe with minimal required fields
-          const newRecipe = {
-            name: recipeName,
-            category: 'Uncategorized',
-            selling_price: 0,
-            total_cost: 0,
-            markup: 0,
-            sales: salesQuantity,
-            ingredients: []
-          };
-          newRecipesToCreate.push(newRecipe);
-          stats.newRecipes.push(recipeName);
-        }
-      });
-
-      console.log('Processing summary:', {
-        totalRows: stats.totalRows,
-        updatingRecipes: updatedRecipes.map(r => ({ name: r.name, sales: r.sales })),
-        newRecipes: newRecipesToCreate.map(r => ({ name: r.name, sales: r.sales }))
-      });
-
-      // First create all new recipes
-      const createdRecipes = [];
-      for (const newRecipe of newRecipesToCreate) {
-        try {
-          console.log('Creating new recipe:', newRecipe.name);
-          const response = await fetch(`${config.API_URL}/recipes`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(newRecipe)
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to create new recipe ${newRecipe.name}: ${errorText}`);
-          }
-
-          const createdRecipe = await response.json();
-          console.log('Successfully created recipe:', createdRecipe);
-          createdRecipes.push(createdRecipe);
-        } catch (error) {
-          console.error(`Error creating recipe ${newRecipe.name}:`, error);
-          throw error;
-        }
-      }
-
-      // Combine existing updated recipes with newly created ones
-      const allRecipesToUpdate = [...updatedRecipes, ...createdRecipes];
-      console.log('All recipes to update:', allRecipesToUpdate);
-
-      // Then update all recipes (both existing and newly created)
-      if (allRecipesToUpdate.length > 0) {
-        console.log('Updating all recipes with sales data...');
-        const updateSuccess = await onSalesUpdate(allRecipesToUpdate);
-        
-        if (!updateSuccess) {
-          throw new Error('Failed to update recipes in the database');
-        }
-      }
-
-      // Add import log with actual results
+      // Add import log with detailed information
       const logDetails = {
         totalRows: jsonData.length,
-        updatedRecipes: updatedRecipes.map(r => r.name),
-        newRecipes: createdRecipes.map(r => r.name),
+        processedRows: recipesData.length,
+        updatedRecipes: result.results.updated.map(r => ({ name: r.name, sales: r.sales })),
+        newRecipes: result.results.created.map(r => ({ name: r.name, sales: r.sales })),
+        failedRecipes: result.results.failed.map(r => ({ name: r.name, error: r.error })),
         timestamp: new Date().toISOString()
       };
 
-      console.log('Import completed successfully:', logDetails);
+      console.log('Import completed:', logDetails);
       addImportLog('sales', 'success', logDetails);
-      setImportStats(stats);
-      setError({ message: 'Sales data imported successfully', type: 'success' });
+      
+      // Set import stats for UI feedback
+      setImportStats({
+        totalRows: jsonData.length,
+        processedRows: recipesData.length,
+        updated: result.results.updated.length,
+        created: result.results.created.length,
+        failed: result.results.failed.length
+      });
+
+      // Show success message with details
+      const message = [
+        'Sales data imported successfully:',
+        `${result.results.updated.length} recipes updated`,
+        `${result.results.created.length} new recipes created`,
+        result.results.failed.length > 0 ? `${result.results.failed.length} recipes failed` : ''
+      ].filter(Boolean).join(', ');
+
+      setError({ message, type: 'success' });
+
+      // Trigger callback to refresh recipes list
+      if (onSalesUpdate) {
+        onSalesUpdate();
+      }
     } catch (error) {
       console.error('Error importing sales:', error);
-      setError({ message: error.message || 'Failed to import sales data', type: 'error' });
+      setError({ 
+        message: error.message || 'Failed to import sales data', 
+        type: 'error' 
+      });
       addImportLog('sales', 'error', {
         error: error.message,
         timestamp: new Date().toISOString()
       });
     }
+
+    // Reset file input
+    event.target.value = '';
   };
 
   const handleExport = () => {
@@ -285,25 +244,62 @@ const DataManager = ({ recipes, onSalesUpdate }) => {
             <h3>Recent Import History</h3>
             <div className="history-list">
               {importLogs.sales.slice(0, 10).map((log, index) => (
-                <div key={index} className="history-item">
+                <div key={index} className={`history-item ${log.status}`}>
                   <div className="history-header">
                     <span className="history-date">{formatTimestamp(log.timestamp)}</span>
-                    <span className="history-rows">Total Rows: {log.details?.totalRows || 0}</span>
+                    <span className={`history-status ${log.status}`}>
+                      {log.status === 'success' ? '✓' : '✗'}
+                    </span>
                   </div>
                   <div className="history-details">
-                    {log.details?.updatedRecipes?.length > 0 && (
-                      <p>
-                        <strong>Updated Recipes:</strong> {log.details.updatedRecipes.length}
-                        {log.details.updatedRecipes.length > 0 && 
-                          ` (${log.details.updatedRecipes.join(', ')})`}
-                      </p>
+                    <div className="history-summary">
+                      <span>Total Rows: {log.details?.totalRows || 0}</span>
+                      <span>Processed: {log.details?.processedRows || 0}</span>
+                    </div>
+                    {log.status === 'success' && (
+                      <>
+                        {log.details?.updatedRecipes?.length > 0 && (
+                          <div className="history-section">
+                            <strong>Updated Recipes:</strong>
+                            <div className="recipe-list">
+                              {log.details.updatedRecipes.map((recipe, idx) => (
+                                <div key={idx} className="recipe-item">
+                                  {recipe.name} (Sales: {recipe.sales})
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {log.details?.newRecipes?.length > 0 && (
+                          <div className="history-section">
+                            <strong>New Recipes:</strong>
+                            <div className="recipe-list">
+                              {log.details.newRecipes.map((recipe, idx) => (
+                                <div key={idx} className="recipe-item">
+                                  {recipe.name} (Sales: {recipe.sales})
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {log.details?.failedRecipes?.length > 0 && (
+                          <div className="history-section error">
+                            <strong>Failed Recipes:</strong>
+                            <div className="recipe-list">
+                              {log.details.failedRecipes.map((recipe, idx) => (
+                                <div key={idx} className="recipe-item">
+                                  {recipe.name} - Error: {recipe.error}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
-                    {log.details?.newRecipes?.length > 0 && (
-                      <p>
-                        <strong>New Recipes:</strong> {log.details.newRecipes.length}
-                        {log.details.newRecipes.length > 0 && 
-                          ` (${log.details.newRecipes.join(', ')})`}
-                      </p>
+                    {log.status === 'error' && (
+                      <div className="error-message">
+                        Error: {log.details?.error || 'Unknown error'}
+                      </div>
                     )}
                   </div>
                 </div>

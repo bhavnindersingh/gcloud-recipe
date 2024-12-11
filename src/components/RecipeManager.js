@@ -4,8 +4,8 @@ import { RECIPE_CATEGORIES } from '../constants/categories';
 import '../styles/RecipeManager.css';
 
 const SORT_FIELDS = {
-  LATEST: 'created_at',
-  SALES: 'monthly_sales',
+  LATEST: 'updated_at',
+  SALES: 'sales',
   MARKUP: 'markup_factor',
   COGS: 'total_cost'
 };
@@ -13,9 +13,10 @@ const SORT_FIELDS = {
 const RecipeManager = ({ recipes = [], onEditRecipe, onDeleteRecipe, onViewRecipe }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [showPending, setShowPending] = useState(false);
   const [sortConfig, setSortConfig] = useState({
     field: SORT_FIELDS.LATEST,
-    direction: 'asc'
+    direction: 'desc'
   });
 
   const categories = useMemo(() => {
@@ -25,9 +26,17 @@ const RecipeManager = ({ recipes = [], onEditRecipe, onDeleteRecipe, onViewRecip
   const handleSort = (field) => {
     setSortConfig(prevConfig => ({
       field,
-      direction: prevConfig.field === field && prevConfig.direction === 'asc' ? 'desc' : 'asc'
+      direction: prevConfig.field === field && prevConfig.direction === 'desc' ? 'asc' : 'desc'
     }));
   };
+
+  const pendingCount = useMemo(() => {
+    return recipes.filter(recipe => 
+      !recipe.print_menu_ready || 
+      !recipe.qr_menu_ready || 
+      !recipe.website_menu_ready
+    ).length;
+  }, [recipes]);
 
   const filteredAndSortedRecipes = useMemo(() => {
     if (!Array.isArray(recipes)) return [];
@@ -51,26 +60,57 @@ const RecipeManager = ({ recipes = [], onEditRecipe, onDeleteRecipe, onViewRecip
       filtered = filtered.filter(recipe => recipe?.category === selectedCategory);
     }
 
+    // Apply pending filter
+    if (showPending) {
+      filtered = filtered.filter(recipe => 
+        !recipe.print_menu_ready || 
+        !recipe.qr_menu_ready || 
+        !recipe.website_menu_ready
+      );
+    }
+
     // Apply sorting
     return [...filtered].sort((a, b) => {
-      const aValue = sortConfig.field === SORT_FIELDS.LATEST 
-        ? new Date(a?.[sortConfig.field] || 0)
-        : parseFloat(a?.[sortConfig.field] || 0);
-      const bValue = sortConfig.field === SORT_FIELDS.LATEST
-        ? new Date(b?.[sortConfig.field] || 0)
-        : parseFloat(b?.[sortConfig.field] || 0);
-
-      if (sortConfig.direction === 'asc') {
-        return aValue > bValue ? 1 : -1;
+      let aValue, bValue;
+      
+      switch (sortConfig.field) {
+        case SORT_FIELDS.LATEST:
+          // Use updated_at if available, fall back to created_at
+          aValue = new Date(a?.updated_at || a?.created_at || 0).getTime();
+          bValue = new Date(b?.updated_at || b?.created_at || 0).getTime();
+          break;
+        case SORT_FIELDS.SALES:
+          aValue = parseInt(a?.sales || 0);
+          bValue = parseInt(b?.sales || 0);
+          break;
+        case SORT_FIELDS.MARKUP:
+          aValue = parseFloat(a?.markup_factor || 0);
+          bValue = parseFloat(b?.markup_factor || 0);
+          break;
+        case SORT_FIELDS.COGS:
+          aValue = parseFloat(a?.total_cost || 0);
+          bValue = parseFloat(b?.total_cost || 0);
+          break;
+        default:
+          return 0;
       }
-      return aValue < bValue ? 1 : -1;
+
+      if (sortConfig.direction === 'desc') {
+        return bValue - aValue;  
+      }
+      return aValue - bValue;  
     });
-  }, [recipes, searchQuery, selectedCategory, sortConfig]);
+  }, [recipes, searchQuery, selectedCategory, showPending, sortConfig]);
 
   return (
     <div className="recipe-manager">
       <div className="page-title-card">
         <h1 className="page-title">Recipe Manager</h1>
+        <div className="recipe-stats">
+          <span className="pending-count">
+            {pendingCount} Pending
+          </span>
+        </div>
       </div>
 
       <div className="recipe-header">
@@ -94,33 +134,38 @@ const RecipeManager = ({ recipes = [], onEditRecipe, onDeleteRecipe, onViewRecip
                 </option>
               ))}
             </select>
-            <div className="separator"></div>
-            <div className="sort-buttons">
-              <button 
-                className={`sort-btn ${sortConfig.field === SORT_FIELDS.LATEST ? 'active' : ''}`}
-                onClick={() => handleSort(SORT_FIELDS.LATEST)}
-              >
-                Latest {sortConfig.field === SORT_FIELDS.LATEST && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-              </button>
-              <button 
-                className={`sort-btn ${sortConfig.field === SORT_FIELDS.COGS ? 'active' : ''}`}
-                onClick={() => handleSort(SORT_FIELDS.COGS)}
-              >
-                COGS {sortConfig.field === SORT_FIELDS.COGS && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-              </button>
-              <button 
-                className={`sort-btn ${sortConfig.field === SORT_FIELDS.SALES ? 'active' : ''}`}
-                onClick={() => handleSort(SORT_FIELDS.SALES)}
-              >
-                Sales {sortConfig.field === SORT_FIELDS.SALES && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-              </button>
-              <button 
-                className={`sort-btn ${sortConfig.field === SORT_FIELDS.MARKUP ? 'active' : ''}`}
-                onClick={() => handleSort(SORT_FIELDS.MARKUP)}
-              >
-                Markup {sortConfig.field === SORT_FIELDS.MARKUP && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-              </button>
-            </div>
+          </div>
+          <div className="filter-section">
+            <button
+              className={`filter-btn ${showPending ? 'active' : ''}`}
+              onClick={() => setShowPending(!showPending)}
+            >
+              Show Pending ({pendingCount})
+            </button>
+            <button 
+              className={`sort-btn ${sortConfig.field === SORT_FIELDS.LATEST ? 'active' : ''}`}
+              onClick={() => handleSort(SORT_FIELDS.LATEST)}
+            >
+              Latest {sortConfig.field === SORT_FIELDS.LATEST && (sortConfig.direction === 'desc' ? '↓' : '↑')}
+            </button>
+            <button 
+              className={`sort-btn ${sortConfig.field === SORT_FIELDS.COGS ? 'active' : ''}`}
+              onClick={() => handleSort(SORT_FIELDS.COGS)}
+            >
+              COGS {sortConfig.field === SORT_FIELDS.COGS && (sortConfig.direction === 'desc' ? '↓' : '↑')}
+            </button>
+            <button 
+              className={`sort-btn ${sortConfig.field === SORT_FIELDS.SALES ? 'active' : ''}`}
+              onClick={() => handleSort(SORT_FIELDS.SALES)}
+            >
+              Sales {sortConfig.field === SORT_FIELDS.SALES && (sortConfig.direction === 'desc' ? '↓' : '↑')}
+            </button>
+            <button 
+              className={`sort-btn ${sortConfig.field === SORT_FIELDS.MARKUP ? 'active' : ''}`}
+              onClick={() => handleSort(SORT_FIELDS.MARKUP)}
+            >
+              Markup {sortConfig.field === SORT_FIELDS.MARKUP && (sortConfig.direction === 'desc' ? '↓' : '↑')}
+            </button>
           </div>
         </div>
 
