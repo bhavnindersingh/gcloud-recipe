@@ -39,11 +39,14 @@ const IngredientsManager = () => {
           const response = await fetch(`${API_URL}/ingredients`);
           if (!response.ok) throw new Error('Failed to fetch ingredients');
           const data = await response.json();
-          // Ensure all costs are properly parsed as numbers
-          const processedData = data.map(ingredient => ({
-            ...ingredient,
-            cost: parseFloat(ingredient.cost) || 0
-          }));
+          // Ensure all costs are properly parsed as numbers and sort by creation date
+          const processedData = data
+            .map(ingredient => ({
+              ...ingredient,
+              cost: parseFloat(ingredient.cost) || 0,
+              createdAt: new Date(ingredient.createdAt || Date.now())
+            }))
+            .sort((a, b) => b.createdAt - a.createdAt); // Sort newest first
           setIngredients(processedData);
           return;
         } catch (error) {
@@ -64,11 +67,28 @@ const IngredientsManager = () => {
     fetchIngredientsData();
   }, []); // Run only on mount
 
+  const normalizeIngredientName = (name) => {
+    return name
+      .toLowerCase()
+      .replace(/\s+/g, '') // Remove all whitespace
+      .replace(/[^a-z0-9]/g, ''); // Remove special characters
+  };
+
   const handleAddIngredient = async (e) => {
     e.preventDefault();
-    const validationError = validateIngredient();
-    if (validationError) {
-      setError({ message: validationError, type: 'error' });
+
+    // Check for duplicate names using normalized comparison
+    const normalizedNewName = normalizeIngredientName(newIngredient.name);
+    const isDuplicate = ingredients.some(
+      existing => normalizeIngredientName(existing.name) === normalizedNewName
+    );
+
+    if (isDuplicate) {
+      setError({
+        message: 'An ingredient with this name already exists',
+        type: 'error',
+        field: 'name'
+      });
       return;
     }
 
@@ -94,17 +114,31 @@ const IngredientsManager = () => {
       
       const savedIngredient = await response.json();
       console.log('Saved ingredient:', savedIngredient);
-      setIngredients(prev => [...prev, savedIngredient]);
+      
+      // Add createdAt timestamp and add to beginning of list
+      const newIngredientWithDate = {
+        ...savedIngredient,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Add new ingredient at the beginning of the list
+      setIngredients(prev => [newIngredientWithDate, ...prev]);
+      
+      // Reset form
       setNewIngredient({
         name: '',
         unit: '',
         cost: '',
         category: 'Vegetables & Fruits'
       });
-      setError({ message: 'Ingredient added successfully', type: 'success' });
-    } catch (err) {
-      console.error('Error saving ingredient:', err);
-      setError({ message: err.message, type: 'error' });
+      
+      showToast('Ingredient added successfully');
+    } catch (error) {
+      console.error('Error adding ingredient:', error);
+      setError({
+        message: error.message,
+        type: 'error'
+      });
     }
   };
 
@@ -287,15 +321,22 @@ const IngredientsManager = () => {
     }
   };
 
+  const handleNewIngredientChange = (updatedIngredient) => {
+    setNewIngredient(updatedIngredient);
+    if (error.message) {
+      setError({ message: '', type: '' });
+    }
+  };
+
   // Filter ingredients based on search term
-  const filteredIngredients = ingredients.filter(ingredient => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      ingredient.name.toLowerCase().includes(searchLower) ||
-      ingredient.category?.toLowerCase().includes(searchLower) ||
-      ingredient.unit.toLowerCase().includes(searchLower)
-    );
-  });
+  const filteredIngredients = ingredients
+    .filter(ingredient => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        ingredient.name.toLowerCase().includes(searchLower) ||
+        ingredient.category.toLowerCase().includes(searchLower)
+      );
+    });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
